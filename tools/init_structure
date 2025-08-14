@@ -1,0 +1,18 @@
+import os, json
+
+TREE = [
+    "images", "data", "docs", "src/core", "src/strategies", "src/utils", "ui", "tests", "tools"
+]
+
+def main():
+    for p in TREE:
+        os.makedirs(p, exist_ok=True)
+    with open(".gitignore","w") as f:
+        f.write("\n".join([
+            ".venv/", "__pycache__/", "*.pyc", ".DS_Store",
+            "data/", "images/*.png", ".env", "trade_log.csv"
+        ]))
+    print("Init complete.")
+
+if __name__ == "__main__":
+    main()
