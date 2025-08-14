@@ -1,0 +1,1 @@
+print("Current Working Directory:", os.getcwd())
