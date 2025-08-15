@@ -2,7 +2,7 @@
 import numpy as np
 from src.utils.risk import kelly_fraction, sharpe
 
-def test_kelly_basic():
+def test_kelly():
     f = kelly_fraction(0.6, 1.5, cap=0.5)
     assert 0 <= f <= 0.5
 
