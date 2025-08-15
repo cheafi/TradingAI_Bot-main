@@ -5,6 +5,7 @@ from typing import Optional
 import pandas as pd
 import numpy as np
 import os
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -57,3 +58,21 @@ def fetch_ohlcv_futu(symbol: str, limit: int = 1500) -> pd.DataFrame:
     except Exception as exc:
         logger.exception("Futu fetch failed: %s", exc)
         return synthetic_ohlcv(symbol, limit)
+
+def fetch_ohlcv_iexcloud(symbol: str, api_key: str, period: str = "1m") -> Optional[pd.DataFrame]:
+    """Fetch OHLCV data from IEX Cloud."""
+    try:
+        url = f"https://cloud.iexapis.com/stable/stock/{symbol}/chart/{period}?token={api_key}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            df = pd.DataFrame(data)
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date')
+            return df
+        else:
+            logger.error(f"IEX Cloud request failed with status {response.status_code}")
+            return None
+    except Exception as e:
+        logger.error(f"Error fetching data from IEX Cloud: {e}")
+        return None

@@ -1,5 +1,6 @@
 # src/config.py
 from dataclasses import dataclass
+from typing import Optional
 
 @dataclass
 class Config:
@@ -30,5 +31,13 @@ class Config:
 
  # Environment toggles
  TELEGRAM_ENABLED: bool = False
+
+ # Trading settings
+ mode: str = "demo"
+ symbol: Optional[str] = None
+
+ def __post_init__(self):
+  if self.symbol is None:
+   self.symbol = "BTC/USDT"
 
 cfg = Config()

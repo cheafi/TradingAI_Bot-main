@@ -1,21 +1,20 @@
-# TradingAI Bot Setup Guide
+# TradingAI Bot — Quickstart & Troubleshooting Guide
 
-## 1. Initial Setup
-```bash
-# Create virtual environment
+1) Setup (one-time)
+------------------------------------------------
+# create & activate virtualenv
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate      # macOS / Linux
+# on Windows: .venv\Scripts\activate
 
-# Install dependencies
+# install dependencies
 pip install -r requirements.txt
 
-# Fix permissions
-chmod +x ui/dashboard.py
-chmod +x src/main.py
-```
+# give executable permissions to script entrypoints (if needed)
+chmod +x basic.py ui/dashboard.py src/utils/main.py
 
-## 2. Running the Bot
-```bash
+2) Running the Bot
+------------------------------------------------
 # Run demo mode
 python basic.py
 
@@ -24,44 +23,49 @@ streamlit run ui/dashboard.py
 
 # Run tests
 pytest
-```
 
-## 3. GitHub Sync
-```bash
-# Initial setup
-git init
+3) Common terminal errors & fixes
+------------------------------------------------
+- AttributeError: 'str' object has no attribute 'symbol'
+  -> Fixed by demo_run now accepting either symbol string or cfg object.
+    If you still have this error, verify you didn't override basic.py to call demo_run("BTC/USDT") while another demo_run expects different signature. Running `python basic.py` in this repo should now work.
+
+- Permission denied when running scripts:
+  -> Run scripts with `python <script_name>.py` or `streamlit run <script_name>.py`.
+
+- pytest: unrecognized arguments: --cov=src
+  -> Either install pytest-cov (`pip install pytest-cov`) or remove the `--cov` argument from `pyproject.toml`.
+
+- Import mismatch / ModuleNotFoundError:
+  -> Clean the __pycache__ directory: `rm -rf __pycache__`.
+  -> Ensure correct imports (e.g., `from src.config import cfg`).
+  -> If you have a submodule named `TradingAI_Bot-main`, remove it:
+     `git submodule deinit TradingAI_Bot-main`
+     `git rm -rf TradingAI_Bot-main`
+
+4) GitHub sync (basic)
+------------------------------------------------
 git add .
-git commit -m "Initial commit"
+git commit -m "Describe changes"
 git branch -M main
-git remote add origin YOUR_GITHUB_REPO_URL
+git remote add origin <YOUR_REPO_URL>
 git push -u origin main
 
-# Regular updates
-git add .
-git commit -m "Update description"
-git push
-```
+5) Next improvements to implement (recommended)
+------------------------------------------------
+- Add Optuna-based Bayesian hyperparameter tuning (replace grid_search in optimize.py)
+- Add CI (GitHub Actions): run pytest and lint on push
+- Add Dockerfile and deploy guidelines (secrets via GitHub Actions secrets)
+- Add more robust monitoring (Prometheus / Grafana) and metrics logging
+- Add state persistence (JSON snapshot / optional Redis) for positions and capital (critical for paper/live state recovery)
 
-## 4. Parameter Optimization
-Test different combinations:
-- EMA periods: [10, 20, 30]
-- Keltner multiplier: [1.0, 1.5, 2.0]
-- Stop loss: [1.0, 1.5, 2.0] * ATR
-- Take profit: [2.0, 2.5, 3.0] * ATR
+6) Troubleshooting logs
+------------------------------------------------
+- Check logs in stdout; add logging to files if needed
+- If ccxt or exchange fetch fails, ensure API keys set in .env or run demo in "demo" mode that uses synthetic data
 
-Run optimization:
-```bash
-python optimize.py
-```
+7) Disclaimer
+------------------------------------------------
+Educational only. Backtest 10+ years, consult advisors, and ensure compliance with local regulations (SEC, SFC).
 
-## 5. Performance Monitoring
-Check metrics in dashboard:
-- ROI
-- Sharpe Ratio
-- Maximum Drawdown
-- Win Rate
-
-## 6. Troubleshooting
-- Check logs in `logs/trading.log`
-- Verify API keys in `.env`
-- Ensure data directory exists
+End of file

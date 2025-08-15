@@ -1,53 +1,35 @@
 # ui/dashboard.py
 import sys
-import os
-import pandas as pd
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
+
 import streamlit as st
-
-# ensure project root is importable
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-
 from src.utils.data import synthetic_ohlcv, fetch_ohlcv_ccxt
 from src.strategies.scalping import enrich, signals
-from src.config import cfg
+from src.config import Config
 
-st.set_page_config(page_title="TradingAI Bot — Demo Dashboard", layout="wide", page_icon="🤖")
-
-# Add a small CSS to tidy up
-st.markdown(
-    """
-    <style>
-    .reportview-container { background-color: #0f1115; color: #e6eef6; }
-    .sidebar .sidebar-content { background-color: #2d2f33; color: #fff; }
-    .stButton>button { background-color: #ff6b6b; color: #fff; }
-    .big-title { font-size:48px; font-weight:700; color:#ffffff; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# UI controls
-st.sidebar.header("Inputs")
-symbol = st.sidebar.text_input("Symbol", "BTC/USDT")
-mode = st.sidebar.selectbox("Mode", ["demo", "ccxt"])
-bars = st.sidebar.slider("Bars", min_value=200, max_value=3000, value=1200, step=100)
-run_btn = st.sidebar.button("Refresh")
-
+st.set_page_config(page_title="TradingAI Dashboard", layout="wide")
 st.title("TradingAI Bot — Demo Dashboard")
 
-# Data fetch with safe fallback
-try:
-    if mode == "demo":
-        df = synthetic_ohlcv(symbol, limit=bars)
-    else:
-        df = fetch_ohlcv_ccxt(symbol, limit=bars)
-    # ensure lowercase columns
-    df.columns = [c.lower() for c in df.columns]
-except Exception as e:
-    st.error(f"Failed to fetch data: {e}")
-    st.stop()
+# Sidebar controls
+symbol = st.sidebar.text_input("Symbol", value="BTC/USDT")
+mode = st.sidebar.selectbox("Mode", ["demo", "live"])
+bars = st.sidebar.slider("Bars", 500, 3000, 1200, 100)
+
+if mode == "demo":
+    df = synthetic_ohlcv(symbol, bars)
+else:
+    df = fetch_ohlcv_ccxt(symbol, limit=bars)  # Fixed: removed extra indentation
+
+if df is not None and not df.empty:
+    st.line_chart(df["close"].tail(500))
+    cfg = Config(symbol=symbol, mode=mode)
+    df_enriched = enrich(df, cfg)
+    sig = signals(df_enriched, cfg)
+    st.write("Recent signals:")
+    st.dataframe(sig.tail(20))
+else:
+    st.error("Failed to fetch data")
 
 # Enrich and compute signals (explicitly pass cfg)
 try:
@@ -93,6 +75,24 @@ if st.button("Run quick demo backtest"):
             price = float(enriched.iloc[i+1]["open"])
             qty = int(capital // price)
             if qty > 0:
+                positions = qty
+                capital -= qty * price
+                log.append(f"BUY {qty}@{price:.2f}")
+        # simple close at next bar if in position and price > entry (toy)
+        if positions > 0:
+            cur_price = float(enriched.iloc[i]["close"])
+            # implement simple stop at ATR distance
+            stop = float(enriched.iloc[i]["close"]) - float(enriched.iloc[i]["ATR"])
+            low = float(enriched.iloc[i]["low"])
+            if low <= stop:
+                # close at stop
+                capital += positions * stop
+                log.append(f"STOP_EXIT {positions}@{stop:.2f}")
+                positions = 0
+    st.write("Backtest log (toy):")
+    st.write("\n".join(log[:20]) or "No trades")
+
+st.caption("Demo dashboard: indicators are synthetic/informational only.")
                 positions = qty
                 capital -= qty * price
                 log.append(f"BUY {qty}@{price:.2f}")
