@@ -5,6 +5,8 @@ import sys
 import os
 import importlib.util
 import traceback
+import logging
+from src.config import TradingConfig
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 if ROOT not in sys.path:
@@ -30,7 +32,11 @@ except Exception:
 if demo_run is None:
     raise RuntimeError("demo_run function not found in src.main")
 
+def main():
+    cfg = TradingConfig()
+    cfg.symbol = "BTC/USDT"  # Set symbol in config
+    logging.info("Running safe demo...")
+    demo_run(cfg)  # Pass config object
+
 if __name__ == "__main__":
-    print("Running safe demo...")
-    demo_run("BTC/USDT")
-    print("Done.")
+    main()

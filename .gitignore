@@ -1,7 +1,20 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.venv/
+
+# Environment
 .env
-trade_log.csv
-*.sqlite
-.DS_Store
+
+# Data
+data/
+logs/
+*.csv
+*.json
+
+# IDE
+.vscode/
+.idea/
+
+# Optimization results
+optimization_results.csv

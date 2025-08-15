@@ -38,10 +38,13 @@ dev = [
 [tool.setuptools]
 packages = ["src"]
 
-[tool.pytest.ini_options]
+[tool.pytest]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-addopts = "-v --cov=src"
+python_files = "test_*.py"
+addopts = "-v"
+
+[tool.coverage.run]
+source = ["src"]
 
 [tool.black]
 line-length = 79
