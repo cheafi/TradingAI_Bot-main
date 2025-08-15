@@ -1,42 +1,22 @@
-# TradingAI_Bot-main — Elite Quant Crypto Bot (Modular, Antifragile, Fast)
+# TradingAI_Bot-main
 
-**Goal:** 30–45% annualized ROI, **Sharpe > 2.0**, **Max DD < 7%** via hybrid ML + momentum scalping, robust risk control (Kelly, VaR(95), Monte Carlo), and antifragile engineering.
+**What is this?**  
+A modular, beginner-friendly AI trading bot skeleton for crypto & stocks. Runs safe demos (no keys), paper trading, and can connect to real exchanges (Binance / Futu).
 
-## ✨ Features
-- **Hybrid ML–Momentum Strategy**: Walk-forward ML (RF/LSTM) + Keltner/RSI/ATR momentum.
-- **Risk Engine**: Kelly sizing (capped), VaR(95), Monte Carlo stress (<7% DD target).
-- **Exchanges**: `ccxt` (Binance, Coinbase, Bybit, etc.), **paper/live** modes.
-- **UI**: **Streamlit dashboard** (PnL, Sharpe, VaR, live positions), strategy picker, parameter sliders.
-- **Telegram**: Alerts + commands (`/balance`, `/profits`, `/reset`, interactive buttons).
-- **Modular**: `src/strategies`, `src/utils`, `ui/`, `tests/` — inspired by Jesse/Nautilus.
-- **Backtesting**: Vectorized NumPy/Pandas; Sharpe = `(mean_ret - rf)/std_ret * sqrt(252)`.
-- **Antifragile**: Try/except everywhere, graceful fallbacks, structured logs.
-
-## 🧭 UI/UX Overview (Streamlit)
-- **Top Bar**: Account mode (paper/live), exchange, symbol.
-- **Left Sidebar**: Strategy selector (Scalping ML / Market Making), risk sliders.
-- **Main Panels**:
-  1. Equity & Drawdown
-  2. Open Positions & Risk (ATR stops)
-  3. Trades + Reasons
-  4. Metrics: ROI, Sharpe, VaR(95), Win rate
-  5. Strategy params + “Deploy” button
-
-## 🧩 Strategies
-- **Primary:** Hybrid ML-Momentum (Keltner breakout + RSI slope + RF/LSTM prob filter; ATR trailing stops, TP at ATR multiples)
-- **Alternative:** Market-making / arbitrage (narrow spreads, inventory skew)
-
-## ⚙️ Setup
+**Quick start (Day 1):**
 ```bash
-# Dev
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Streamlit UI
+python basic.py           # safe offline demo
 streamlit run ui/dashboard.py
+pytest -q
 
-# Telegram bot (set TELEGRAM_TOKEN/CHAT_ID in .env)
-python src/utils/telegram_bot.py
-
-# Docker
-docker compose up --build
+**Simple explanations**
+ROI = how much your piggy bank grows in a year (we aim 35–50%).
+Kelly = smart bet sizing so you don’t lose your shirt.
+VaR(95) = how badly you might lose on a very bad day (95% worst-case).
+Monte Carlo = rolling dice many times to see how bad things could get.
+Project layout
+See src/ (the bot brain), ui/ (dashboard), tests/ (automated checks), research/agents/ (ML experiments).
+Disclaimer: Educational only—backtest 10+ years (yfinance/ccxt), consult advisors, and comply with SEC Reg NMS.

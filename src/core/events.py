@@ -1,27 +1,33 @@
+# src/core/events.py
+"""Simple async EventBus used to decouple components."""
 from __future__ import annotations
-from dataclasses import dataclass
-from typing import Callable, Dict, Any, List
 import asyncio
 import logging
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class Event:
-    type: str
+    name: str
     payload: Dict[str, Any]
+
 
 class EventBus:
     def __init__(self) -> None:
-        self.subscribers: Dict[str, List[Callable[[Event], Any]]] = {}
+        self.handlers: Dict[str, List[Callable[[Event], Any]]] = {}
 
-    def subscribe(self, event_type: str, handler: Callable[[Event], Any]) -> None:
-        self.subscribers.setdefault(event_type, []).append(handler)
+    def subscribe(self, name: str, handler: Callable[[Event], Any]) -> None:
+        self.handlers.setdefault(name, []).append(handler)
 
-    async def publish(self, event_type: str, payload: Dict[str, Any]) -> None:
-        evt = Event(event_type, payload)
-        for handler in self.subscribers.get(event_type, []):
+    async def publish(self, name: str, payload: Dict[str, Any]) -> None:
+        evt = Event(name=name, payload=payload)
+        for fn in self.handlers.get(name, []):
             try:
-                res = handler(evt)
+                res = fn(evt)
                 if asyncio.iscoroutine(res):
                     await res
-            except Exception as e:
-                logging.exception(f"[EventBus] handler failed: {e}")
+            except Exception as exc:
+                logger.exception("Event handler failed: %s", exc)

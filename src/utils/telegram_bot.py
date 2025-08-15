@@ -1,62 +1,36 @@
 # src/utils/telegram_bot.py
+"""Telegram interface (optional). Use TELEGRAM_TOKEN + TELEGRAM_CHAT_ID in .env."""
 from __future__ import annotations
-import os, logging
-from typing import Dict
-from datetime import datetime, timezone
+import logging
+import os
+from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-    from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
-except ModuleNotFoundError:
-    raise SystemExit("Install python-telegram-bot: pip install python-telegram-bot==21.*")
+    from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+except Exception:
+    ApplicationBuilder = None
 
-TOKEN = os.getenv("TELEGRAM_TOKEN", "")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-STATE: Dict[str, float] = {"capital": 50_000.0, "pnl": 0.0}
 
-def fmt_summary() -> str:
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    cap = STATE["capital"]; pnl = STATE["pnl"]; pnlp = (pnl / max(cap - pnl, 1e-9))*100
-    return (f"📈 *Bot Summary* ({ts})\n"
-            f"Capital: `${cap:,.2f}`\nRealized PnL: `${pnl:,.2f}` ({pnlp:.2f}%)\n"
-            f"Open Positions: 0 (demo)\n")
+async def suggest_handler(update: "Update", context: "ContextTypes.DEFAULT_TYPE"):
+    """/suggest SYMBOL - returns an example suggestion."""
+    args = context.args or []
+    symbol = args[0].upper() if args else "AAPL"
+    text = f"📌 Suggestion for {symbol}\nAction: BUY\nTarget: $250\nStop: $230\nNote: Demo suggestion."
+    await update.message.reply_text(text)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [[InlineKeyboardButton("Refresh Summary", callback_data="refresh"),
-           InlineKeyboardButton("Reset PnL", callback_data="reset")]]
-    await update.message.reply_markdown(fmt_summary(), reply_markup=InlineKeyboardMarkup(kb))
-
-async def profits(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_markdown(fmt_summary())
-
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"Balance: ${STATE['capital']:,.2f}")
-
-async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    STATE["pnl"] = 0.0
-    await update.message.reply_text("PnL reset.")
-
-async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
-    if q.data == "refresh":
-        await q.edit_message_text(fmt_summary(), parse_mode="Markdown")
-    elif q.data == "reset":
-        STATE["pnl"] = 0.0
-        await q.edit_message_text("PnL reset.")
-
-def run():
-    if not TOKEN:
-        logging.error("TELEGRAM_TOKEN missing.")
+def run_telegram_bot():
+    if not ApplicationBuilder:
+        logger.warning("python-telegram-bot not installed; skip telegram.")
         return
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("profits", profits))
-    app.add_handler(CommandHandler("balance", balance))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(CallbackQueryHandler(button))
+    if not TELEGRAM_TOKEN:
+        logger.warning("TELEGRAM_TOKEN missing.")
+        return
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("suggest", suggest_handler))
     app.run_polling()
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    run()

@@ -1,8 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
-.DS_Store
-data/
-images/*.png
 .env
 trade_log.csv
+*.sqlite
+.DS_Store

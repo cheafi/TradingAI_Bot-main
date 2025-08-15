@@ -1,10 +1,8 @@
-from src.strategies.scalping import ScalpingStrategy
-import pandas as pd
+# basic.py
+"""Run a one-step demo so newcomers can see the bot in action without keys."""
+from src.main import demo_run
 
-# Example quick test
-df = pd.DataFrame({
-    'close': [100, 101, 102, 99, 98, 100, 103, 105]
-})
-bot = ScalpingStrategy(capital=10000)
-signals = bot.generate_signals(df)
-print(signals)
+if __name__ == "__main__":
+    print("Running demo (safe, offline-friendly)...")
+    demo_run("BTC/USDT")
+    print("Demo finished. See logs for details.")

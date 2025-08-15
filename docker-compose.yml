@@ -1,17 +1,11 @@
-version: "3.9"
+version: "3.8"
 services:
-  bot:
-    build: .
-    environment:
-      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-    volumes:
-      - ./:/app
-    command: python -m src.main
-  ui:
+  bot-ui:
     build: .
     ports:
       - "8501:8501"
+    environment:
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./:/app
-    command: streamlit run ui/dashboard.py --server.port=8501 --server.address=0.0.0.0
+  # add redis or db services as needed
