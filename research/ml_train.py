@@ -23,3 +23,31 @@ def predict_ensemble(models, X):
     # average probabilities
     p = np.mean([m.predict_proba(X)[:,1] for m in models], axis=0)
     return p
+
+def monte_carlo(returns, paths=1000, horizon=None):
+    import numpy as np
+    r = np.asarray(returns)
+    if r.size == 0:
+        return 0.0, 0.0
+    rng = np.random.default_rng(0)
+    n = len(r) if horizon is None else horizon
+    sims = rng.choice(r, size=(paths, n), replace=True)
+    eq = np.cumprod(1 + sims, axis=1)
+    peak = np.maximum.accumulate(eq, axis=1)
+    dd = (peak - eq) / peak
+    max_dd = dd.max(axis=1)
+    return float(np.median(max_dd)), float(np.percentile(max_dd, 95))
+
+def sharpe(returns, rf=0.0):
+    import numpy as np
+    if len(returns) == 0:
+        return 0.0
+    mu = np.mean(returns) * 252
+    sigma = np.std(returns) * np.sqrt(252)
+    return 0.0 if sigma == 0 else (mu - rf) / sigma
+
+
+
+def kelly_fraction(p=0.6, b=1.5, cap=0.01):
+    f = (p*b - (1-p)) / b
+    return max(0.0, min(f, cap))
