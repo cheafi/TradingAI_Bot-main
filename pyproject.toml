@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=64.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tradingai_bot"
+version = "0.1.0"
+description = "Ultimate AI Trading Bot with Multi-Agent Analysis"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "pandas",
+    "ccxt",
+    "python-dotenv",
+    "streamlit",
+    "plotly",
+    "yfinance",
+    "openbb",
+    "qlib",
+    "ta-lib",
+    "tensorflow",
+    "torch",
+    "python-telegram-bot",
+    "redis",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "mypy",
+    "watchdog",
+]
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --cov=src"
+
+[tool.black]
+line-length = 79
+target-version = ["py39"]
