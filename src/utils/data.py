@@ -10,7 +10,9 @@ import requests
 logger = logging.getLogger(__name__)
 
 def synthetic_ohlcv(symbol: str = "X", limit: int = 1000) -> pd.DataFrame:
-    rng = np.random.default_rng(abs(hash(symbol)) % (2**32))
+    # Ensure symbol is a string for hashing
+    symbol_str = str(symbol) if not isinstance(symbol, str) else symbol
+    rng = np.random.default_rng(abs(hash(symbol_str)) % (2**32))
     n = int(limit)
     shocks = rng.normal(0, 0.0015, n)
     price = 100.0 * np.exp(np.cumsum(shocks))

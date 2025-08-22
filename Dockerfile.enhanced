@@ -1,0 +1,74 @@
+# Multi-stage Docker build for production deployment
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PIP_NO_CACHE_DIR=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    libffi-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app user
+RUN useradd --create-home --shell /bin/bash app
+
+# Set work directory
+WORKDIR /app
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Development stage
+FROM base as development
+
+# Install development dependencies
+RUN pip install pytest pytest-cov black isort mypy flake8
+
+# Copy source code
+COPY . .
+
+# Change ownership to app user
+RUN chown -R app:app /app
+USER app
+
+# Expose port for Streamlit
+EXPOSE 8501
+
+# Default command for development
+CMD ["streamlit", "run", "ui/enhanced_dashboard.py", "--server.address", "0.0.0.0"]
+
+# Production stage
+FROM base as production
+
+# Copy only necessary files
+COPY src/ ./src/
+COPY research/ ./research/
+COPY ui/ ./ui/
+COPY *.py ./
+
+# Create necessary directories
+RUN mkdir -p models results data logs
+
+# Change ownership to app user
+RUN chown -R app:app /app
+USER app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import src.main; print('Health check passed')" || exit 1
+
+# Expose ports
+EXPOSE 8501 8080
+
+# Production command
+CMD ["python", "src/main.py"]

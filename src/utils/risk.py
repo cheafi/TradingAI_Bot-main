@@ -63,6 +63,29 @@ def garch_volatility_forecast(returns: np.ndarray) -> float:
     vol = np.sqrt(np.sum(weights * (r - r.mean()) ** 2))
     return float(vol)
 
+
+def max_drawdown(equity) -> float:
+    """Compute maximum drawdown from an equity curve (array or pd.Series).
+
+    Returns fraction (0.0 - 1.0)
+    """
+    try:
+        import numpy as _np
+        import pandas as _pd
+
+        if isinstance(equity, _pd.Series) or isinstance(equity, _pd.DataFrame):
+            eq = equity.values.flatten()
+        else:
+            eq = _np.asarray(equity)
+        if eq.size == 0:
+            return 0.0
+        peak = _np.maximum.accumulate(eq)
+        dd = (peak - eq) / peak
+        return float(_np.nanmax(dd))
+    except Exception as e:
+        logger.error(f"Error computing max_drawdown: {e}")
+        return 0.0
+
 @dataclass
 class RiskMetrics:
     var_95: float

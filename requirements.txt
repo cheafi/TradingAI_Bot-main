@@ -8,3 +8,9 @@ uvloop>=0.17; platform_system != "Windows"
 # Optional heavy ML libs (install only if you need them)
 # tensorflow>=2.10
 # torch
+scikit-learn>=1.2
+joblib>=1.2
+optuna>=3.0
+ta>=0.10.1
+yfinance>=0.2.18
+lightgbm>=4.0
