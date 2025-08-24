@@ -17,50 +17,118 @@
 
 ## 🚀 快速開始 (2 分鐘設置)
 
-### 🏃‍♂️ 一鍵啟動所有服務
+以下步驟適合完全新手，照做即可跑起全部服務（Telegram 機器人 + 24/7 加密掃描代理 + Streamlit UI）。
+
+1) 安裝依賴與基本環境
+
 ```bash
-# 1. 進入項目目錄
 cd TradingAI_Bot-main
-
-# 2. 安裝依賴 (如果尚未安裝)
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
 pip install -r requirements.txt
-
-# 3. 一鍵啟動所有服務 (推薦)
-./quick_start.sh
-# 選擇選項 1: Quick Start All
 ```
+
+2) 設定環境變數（最少只要 Telegram Token）
+
+- 必填：
+   - TELEGRAM_TOKEN=你的 Bot Token（向 BotFather 取得）
+- 選填：
+   - TELEGRAM_CHAT_ID=你的個人 chat id（用於自動訂閱推播）
+   - TIMEZONE=Asia/Taipei（預設 UTC，用於排程報告）
+   - CRYPTO_SYMBOLS=BTC/USDT,ETH/USDT（加密掃描清單）
+   - CRYPTO_EXCHANGE=binance（ccxt 交易所 id）
+   - CRYPTO_TIMEFRAME=15m（掃描 K 線週期）
+   - CRYPTO_POLLING=300（掃描間隔秒數）
+
+你可以用 .env 或 secrets.toml 管理：
+
+```toml
+# secrets.toml 範例
+TELEGRAM_TOKEN = "123456:ABCDEF"
+TELEGRAM_CHAT_ID = "123456789"     # 可選
+TIMEZONE = "Asia/Taipei"
+CRYPTO_SYMBOLS = "BTC/USDT,ETH/USDT"
+CRYPTO_EXCHANGE = "binance"
+CRYPTO_TIMEFRAME = "15m"
+CRYPTO_POLLING = "300"
+```
+
+3) 可選：調整策略 YAML（config/crypto_strategy.yml）
+
+此檔可調整交易所、標的、指標與風控：
+
+```yaml
+exchange: binance
+symbols: ["BTC/USDT", "ETH/USDT"]
+timeframe: "15m"
+polling_sec: 300
+indicators:
+   ema_fast: 50
+   ema_slow: 200
+   rsi_len: 14
+   rsi_oversold: 30
+   donchian_len: 55
+risk:
+   stop_pct: 0.03
+   badsetup_timeframe: "1h"
+notify:
+   duplicate_ttl_sec: 3600
+   badsetup_ttl_sec: 36000
+```
+
+4) 一鍵啟動（推薦用 VS Code 任務）
+
+- VS Code 內建任務：
+   - Run Telegram Bot → 啟動 `src/telegram/real_investment_bot.py`
+   - Run Streamlit UI → 啟動 `ui/enhanced_dashboard.py`（http://localhost:8501）
+
+或用終端機：
+
+```bash
+python src/telegram/real_investment_bot.py
+python -m streamlit run ui/enhanced_dashboard.py --server.port 8501 --server.address 0.0.0.0
+```
+
+5) 跟機器人說哈囉
+
+- 打開 Telegram，搜尋你的 Bot，傳送 /start
+- 若設了 TELEGRAM_CHAT_ID，將自動加入訂閱者，會收到定時報告與交易提醒
 
 ### 📱 Telegram 機器人 - 立即可用！
 您的機器人已經配置好並在運行中！
 
-**🟢 機器人狀態**: 運行中 (PID: 查看 `ps aux | grep enhanced_bot`)
-- **Token**: `8011990879:AAH3V4SvGDQ73793yQj9i6YH9B7k_Dc1fbs`  
-- **Chat ID**: `722225160`
-- **日誌**: `tail -f telegram_bot.log`
+**🟢 機器人狀態**: 就緒（需設定 Token）
+- Token: 以環境變數 `TELEGRAM_TOKEN` 設定，或在 `secrets.toml` 中設定 `TELEGRAM_TOKEN`
+- Chat ID（選用）: 以環境變數 `TELEGRAM_CHAT_ID` 設定，或在 `secrets.toml` 中設定 `TELEGRAM_CHAT_ID`
+- 啟動方式：在 VS Code 執行任務「Run Telegram Bot」或以您的方式啟動
 
 **立即開始聊天：**
-1. 🔍 打開 Telegram 
-2. 🤖 搜索您的機器人或開始聊天
-3. 💬 發送 `/start` 開始使用
+1. 🔍 於 BotFather 建立機器人並取得 Token
+2. 🔐 設定 Token 與（可選）Chat ID（見上）
+3. ▶️ 於 VS Code 執行任務「Run Telegram Bot」
+4. 💬 在 Telegram 發送 `/start` 開始使用
 
-**主要指令：**
+**主要指令（已實作）：**
+
 ```
-/start      - 歡迎菜單與互動鍵盤
-/portfolio  - 查看投資組合狀態  
-/suggest AAPL - AI 分析建議 (含價格目標)
-/chart AAPL - 生成專業價格圖表
-/risk       - 完整風險報告 (VaR, 夏普比率)
-/optimize   - 投資組合優化建議
-/voice      - 語音投資組合摘要
-/alerts     - 切換交易警報開關
+/start, /help
+/subscribe, /unsubscribe
+/outlook, /opportunities, /portfolio, /alerts, /status, /market, /news
+/add <SYMBOL> [QTY] [COST] [STOP], /remove <SYMBOL>, /setstop <SYMBOL> <PRICE>
+/stop
+/backtest <SYMBOL> [TIMEFRAME]
+/advise <SYMBOL> <DATE> [TIMEFRAME]
+/simulate <SYMBOL> <START> <END> [TIMEFRAME]
 ```
+
+資料與持倉存放：
+
+- data/portfolios/<chat_id>.json：你的個人持倉（qty/cost/stop）
+- data/daily_reports/opportunities.json：即時機會清單（由 CryptoAgent 生成）
+- logs/telegram_bot.log：機器人日誌
 
 ### 🎨 Streamlit 儀表板
-```bash
-# 啟動多頁面儀表板
-streamlit run ui/enhanced_dashboard.py --server.port 8501
-# 訪問: http://localhost:8501
-```
+在 VS Code 執行任務「Run Streamlit UI」，或以您慣用方式啟動；預設連到 http://localhost:8501。
 
 **功能頁面：**
 - 🏠 **主頁**: 性能指標卡片, 投資組合概覽
@@ -158,8 +226,10 @@ TradingAI_Bot-main/
 │       ├── variable_tuner.py # 實時參數調整
 │       ├── prediction_analysis.py # ML 模型洞察
 │       └── portfolio_analysis.py # 投資組合分析
-├── 📱 src/telegram/          # 增強 Telegram 機器人
-│   └── enhanced_bot.py      # 智能機器人 (🟢 運行中)
+├── 📱 src/telegram/          # Telegram 機器人
+│   └── real_investment_bot.py  # 主機器人入口 (🟢 推薦)
+├── 🤖 src/agents/
+│   └── crypto_agent.py       # 24/7 加密掃描代理（乾跑 + 風控 + 回測）
 ├── 🧮 src/strategies/        # 交易策略
 │   ├── scalping.py          # 高頻策略
 │   └── signal_strategy.py   # 信號整合策略
@@ -244,18 +314,9 @@ pytest tests/test_scalping.py -v         # 交易策略
 ## 🎯 立即行動指南
 
 ### 1️⃣ 現在立即可做 (5 分鐘)
-```bash
-# 檢查 Telegram 機器人狀態
-ps aux | grep enhanced_bot  # 應該顯示運行中的進程
-
-# 測試機器人
-# 1. 打開 Telegram
-# 2. 搜索您的機器人 (token: 8011990879:AAH3V4SvGDQ73793yQj9i6YH9B7k_Dc1fbs)
-# 3. 發送 /start
-
-# 啟動 UI 
-./quick_start.sh  # 選項 3: Start Streamlit UI Only
-```
+- 於 `secrets.toml` 或環境變數設定 `TELEGRAM_TOKEN`（與可選 `TELEGRAM_CHAT_ID`）
+- 在 VS Code 執行任務「Run Telegram Bot」，於 Telegram 發送 `/start`
+- 在 VS Code 執行任務「Run Streamlit UI」，於瀏覽器開啟 http://localhost:8501
 
 ### 2️⃣ 今天完成 (30 分鐘)
 ```bash
@@ -268,6 +329,20 @@ python research/ml_pipeline.py --symbol AAPL --start 2020-01-01
 # 測試所有 Telegram 指令
 # /portfolio, /suggest AAPL, /chart MSFT, /risk, /optimize
 ```
+
+## 🕰 歷史建議與區間模擬（新）
+
+透過以下指令快速回看歷史某日或一段期間內的策略建議，並評估「+30 天後」的結果：
+
+- 單日建議與 30 天後結果：
+   - `/advise BTC/USDT 2025-08-01 1h`
+   - 若省略週期，預設使用 YAML 或環境變數中的 timeframe
+
+- 區間內所有事件與統計：
+   - `/simulate BTC/USDT 2025-06-01 2025-08-01 1h`
+   - 回傳事件樣本（前 20 筆）、平均報酬、勝率、最佳/最差表現
+
+注意：此功能使用交易所公開 K 線資料（ccxt），結果受資料可得性與時間框架影響。
 
 ### 3️⃣ 本週目標
 1. **📊 配置真實數據源**: 設置 Yahoo Finance / Alpha Vantage API
@@ -349,4 +424,4 @@ python research/ml_pipeline.py --symbol AAPL --start 2020-01-01
 
 ---
 
-*最後更新: 2024年8月22日* | *系統狀態: 🟢 生產就緒* | *Telegram 機器人: 🟢 運行中*
+*最後更新: 2025年8月24日* | *系統狀態: 🟢 生產就緒* | *Telegram 機器人: 🟢 運行中*

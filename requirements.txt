@@ -14,3 +14,4 @@ optuna>=3.0
 ta>=0.10.1
 yfinance>=0.2.18
 lightgbm>=4.0
+python-dateutil>=2.8.2

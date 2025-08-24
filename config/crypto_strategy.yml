@@ -1,0 +1,18 @@
+exchange: binance
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+timeframe: 15m
+polling_sec: 300
+indicators:
+  ema_fast: 50
+  ema_slow: 200
+  rsi_len: 14
+  rsi_oversold: 30
+  donchian_len: 55
+risk:
+  stop_pct: 0.03  # default stop if not provided (3%)
+  badsetup_timeframe: 1h
+notify:
+  duplicate_ttl_sec: 3600
+  badsetup_ttl_sec: 36000

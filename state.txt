@@ -1,71 +1,77 @@
-# TradingAI Bot — Quickstart & Troubleshooting Guide
+# TradingAI Bot — Quickstart, Ops & Troubleshooting (2025-08-24)
 
-1) Setup (one-time)
+1) One-time setup
 ------------------------------------------------
-# create & activate virtualenv
 python3 -m venv .venv
-source .venv/bin/activate      # macOS / Linux
-# on Windows: .venv\Scripts\activate
-
-# install dependencies
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-# give executable permissions to script entrypoints (if needed)
-chmod +x basic.py ui/dashboard.py src/utils/main.py
+Optional: copy and edit config/crypto_strategy.yml (strategy params)
 
-2) Running the Bot
+2) Environment variables (minimum TELEGRAM_TOKEN)
 ------------------------------------------------
-# Run demo mode
-python basic.py
+Mandatory:
+- TELEGRAM_TOKEN = <BotFather token>
 
-# Run dashboard
-streamlit run ui/dashboard.py
+Optional:
+- TELEGRAM_CHAT_ID = <your chat id for auto-subscribe>
+- TIMEZONE = Asia/Taipei (default UTC)
+- CRYPTO_SYMBOLS = BTC/USDT,ETH/USDT
+- CRYPTO_EXCHANGE = binance
+- CRYPTO_TIMEFRAME = 15m
+- CRYPTO_POLLING = 300
 
-# Run tests
-pytest
+Store in .env or secrets.toml.
 
-3) Common terminal errors & fixes
+3) Start services (VS Code tasks or CLI)
 ------------------------------------------------
-- AttributeError: 'str' object has no attribute 'symbol'
-  -> Fixed by demo_run now accepting either symbol string or cfg object.
-    If you still have this error, verify you didn't override basic.py to call demo_run("BTC/USDT") while another demo_run expects different signature. Running `python basic.py` in this repo should now work.
+- VS Code tasks:
+  • Run Telegram Bot → python src/telegram/real_investment_bot.py
+  • Run Streamlit UI → streamlit run ui/enhanced_dashboard.py (http://localhost:8501)
 
-- Permission denied when running scripts:
-  -> Run scripts with `python <script_name>.py` or `streamlit run <script_name>.py`.
+- CLI:
+  python src/telegram/real_investment_bot.py
+  streamlit run ui/enhanced_dashboard.py --server.port 8501 --server.address 0.0.0.0
 
-- pytest: unrecognized arguments: --cov=src
-  -> Either install pytest-cov (`pip install pytest-cov`) or remove the `--cov` argument from `pyproject.toml`.
-
-- Import mismatch / ModuleNotFoundError:
-  -> Clean the __pycache__ directory: `rm -rf __pycache__`.
-  -> Ensure correct imports (e.g., `from src.config import cfg`).
-  -> If you have a submodule named `TradingAI_Bot-main`, remove it:
-     `git submodule deinit TradingAI_Bot-main`
-     `git rm -rf TradingAI_Bot-main`
-
-4) GitHub sync (basic)
+4) Telegram usage cheat sheet
 ------------------------------------------------
-git add .
-git commit -m "Describe changes"
-git branch -M main
-git remote add origin <YOUR_REPO_URL>
-git push -u origin main
+/start, /help
+/subscribe, /unsubscribe
+/outlook, /opportunities, /portfolio, /alerts, /status, /market, /news
+/add <SYMBOL> [QTY] [COST] [STOP], /remove <SYMBOL>, /setstop <SYMBOL> <PRICE>
+/stop
+/backtest <SYMBOL> [TIMEFRAME]
 
-5) Next improvements to implement (recommended)
-------------------------------------------------
-- Add Optuna-based Bayesian hyperparameter tuning (replace grid_search in optimize.py)
-- Add CI (GitHub Actions): run pytest and lint on push
-- Add Dockerfile and deploy guidelines (secrets via GitHub Actions secrets)
-- Add more robust monitoring (Prometheus / Grafana) and metrics logging
-- Add state persistence (JSON snapshot / optional Redis) for positions and capital (critical for paper/live state recovery)
+Data & logs:
+- data/portfolios/<chat_id>.json (positions)
+- data/daily_reports/opportunities.json (agent opportunities)
+- logs/telegram_bot.log (bot logs)
 
-6) Troubleshooting logs
+5) 24/7 Crypto Agent (dry run)
 ------------------------------------------------
-- Check logs in stdout; add logging to files if needed
-- If ccxt or exchange fetch fails, ensure API keys set in .env or run demo in "demo" mode that uses synthetic data
+File: src/agents/crypto_agent.py (ccxt)
+- Signals: EMA crossover, RSI oversold cross-up, Donchian breakout
+- Risk: stop-loss hit, 1h below EMA200
+- Output: Telegram notifications, opportunities.json with ml_score
+- Config: config/crypto_strategy.yml
+- Backtest: /backtest BTC/USDT 15m
 
-7) Disclaimer
+6) Tests & health
 ------------------------------------------------
-Educational only. Backtest 10+ years, consult advisors, and ensure compliance with local regulations (SEC, SFC).
+pytest --maxfail=1 -q     # All tests should pass (6/6)
+
+7) Common issues
+------------------------------------------------
+- Bot not sending messages: check TELEGRAM_TOKEN, logs/telegram_bot.log
+- No crypto alerts: ensure ccxt installed, exchange reachable, symbols valid
+- UI empty: start bot/agent first to generate data files under data/
+
+8) Useful paths
+------------------------------------------------
+- src/telegram/real_investment_bot.py (entry)
+- src/agents/crypto_agent.py
+- ui/enhanced_dashboard.py
+- config/crypto_strategy.yml
+- data/, logs/
 
 End of file

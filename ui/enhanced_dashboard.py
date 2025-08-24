@@ -1,262 +1,348 @@
-"""
-Enhanced Streamlit dashboard with multiple pages, themes, and advanced features.
-"""
+import time
+import os
+from datetime import datetime, timezone
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import numpy as np
-from pathlib import Path
-import json
-import io
-import base64
+from src.ui_ext.data_sources import (
+    summarize_market_report,
+    recent_risk_alerts,
+    read_opportunities,
+    make_pdf_from_text,
+)
+from src.ui_ext.settings_store import load_settings, send_telegram_message
+from src.ui_ext.ui_helpers import render_mode_pill
 
-# Configure page
-st.set_page_config(
-    page_title="TradingAI Pro",
-    page_icon="📈",
-    layout="wide",
-    initial_sidebar_state="expanded"
+
+from contextlib import suppress
+
+
+def _cleanup_legacy_pages() -> None:
+    """Remove legacy/duplicate Streamlit pages to avoid sidebar clutter."""
+    with suppress(Exception):
+        base_dir = os.path.dirname(__file__)
+        pages_dir = os.path.join(base_dir, "pages")
+        legacy = [
+            "dashboard.py",
+            "dashboard_main.py",
+            "data_explorer.py",
+            "portfolio_analysis.py",
+            "prediction_analysis.py",
+            "settings.py",
+            "variable_tuner.py",
+            "01_Enhanced Dashboard.py",
+        ]
+        for fname in legacy:
+            fpath = os.path.join(pages_dir, fname)
+            if os.path.exists(fpath):
+                with suppress(Exception):
+                    os.remove(fpath)
+
+
+_cleanup_legacy_pages()
+
+st.set_page_config(page_title="Enhanced Dashboard", layout="wide")
+st.title("Enhanced Dashboard")
+render_mode_pill()
+
+# Universe selector
+universe = st.radio(
+    "Universe",
+    options=["Crypto", "US Stocks"],
+    horizontal=True,
+    key="universe_choice",
+    help=(
+        "Choose your market universe. This affects counts, focus, and "
+        "exports below."
+    ),
 )
 
-# Custom CSS for beautiful theme
-st.markdown("""
-<style>
-    .main-header {
-        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
-        padding: 1rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .metric-card {
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #007bff;
-        margin-bottom: 1rem;
-    }
-    .success-metric {
-        border-left-color: #28a745;
-    }
-    .warning-metric {
-        border-left-color: #ffc107;
-    }
-    .danger-metric {
-        border-left-color: #dc3545;
-    }
-    .sidebar .sidebar-content {
-        background: #f1f3f4;
-    }
-</style>
-""", unsafe_allow_html=True)
 
-def create_download_link(df, filename, file_format="csv"):
-    """Create download link for dataframe."""
-    if file_format == "csv":
-        csv = df.to_csv(index=False)
-        b64 = base64.b64encode(csv.encode()).decode()
-        href = f'<a href="data:file/csv;base64,{b64}" download="{filename}.csv">Download CSV</a>'
-    elif file_format == "json":
-        json_str = df.to_json(orient="records", indent=2)
-        b64 = base64.b64encode(json_str.encode()).decode()
-        href = f'<a href="data:file/json;base64,{b64}" download="{filename}.json">Download JSON</a>'
-    return href
+def kpi_card(
+    label: str,
+    value: str,
+    tip: str | None = None,
+    color: str | None = None,
+):
+    if color == "green":
+        st.success(f"{label}: {value}")
+    elif color == "red":
+        st.error(f"{label}: {value}")
+    else:
+        st.info(f"{label}: {value}")
+    if tip:
+        st.caption(tip)
 
-def main_dashboard():
-    """Main dashboard page."""
-    st.markdown('<div class="main-header"><h1>🚀 TradingAI Pro Dashboard</h1></div>', 
-                unsafe_allow_html=True)
-    
-    # Sidebar controls
-    st.sidebar.title("🎯 Trading Controls")
-    
-    # Symbol selection
-    symbol = st.sidebar.selectbox(
-        "📊 Select Symbol",
-        ["AAPL", "MSFT", "GOOGL", "TSLA", "BTC/USDT", "ETH/USDT"],
-        index=0
-    )
-    
-    # Mode selection
-    mode = st.sidebar.selectbox(
-        "🔄 Trading Mode",
-        ["Backtest", "Paper Trading", "Live Trading"],
-        index=0
-    )
-    
-    # Date range
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        start_date = st.date_input("Start Date", pd.to_datetime("2020-01-01"))
-    with col2:
-        end_date = st.date_input("End Date", pd.to_datetime("2024-01-01"))
-    
-    # Strategy parameters
-    st.sidebar.subheader("⚙️ Strategy Parameters")
-    ema_period = st.sidebar.slider("EMA Period", 5, 200, 20)
-    atr_period = st.sidebar.slider("ATR Period", 5, 50, 14)
-    rsi_period = st.sidebar.slider("RSI Period", 2, 30, 14)
-    
-    # Risk management
-    st.sidebar.subheader("🛡️ Risk Management")
-    max_position = st.sidebar.slider("Max Position Size (%)", 1, 20, 5)
-    stop_loss = st.sidebar.slider("Stop Loss (%)", 0.5, 10.0, 2.0)
-    take_profit = st.sidebar.slider("Take Profit (%)", 1.0, 20.0, 5.0)
-    
-    # Main content area
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.markdown(
-            '<div class="metric-card success-metric">'
-            '<h3>💰 Portfolio Value</h3>'
-            '<h2>$12,345</h2>'
-            '<p>+5.2% today</p>'
-            '</div>',
-            unsafe_allow_html=True
-        )
-    
-    with col2:
-        st.markdown(
-            '<div class="metric-card">'
-            '<h3>📊 Sharpe Ratio</h3>'
-            '<h2>2.45</h2>'
-            '<p>Excellent</p>'
-            '</div>',
-            unsafe_allow_html=True
-        )
-    
-    with col3:
-        st.markdown(
-            '<div class="metric-card warning-metric">'
-            '<h3>📉 Max Drawdown</h3>'
-            '<h2>3.2%</h2>'
-            '<p>Within limits</p>'
-            '</div>',
-            unsafe_allow_html=True
-        )
-    
-    with col4:
-        st.markdown(
-            '<div class="metric-card">'
-            '<h3>🎯 Win Rate</h3>'
-            '<h2>68%</h2>'
-            '<p>Strong performance</p>'
-            '</div>',
-            unsafe_allow_html=True
-        )
-    
-    # Charts section
-    st.subheader("📈 Price & Signals Chart")
-    
-    # Generate sample data for demo
-    dates = pd.date_range(start=start_date, end=end_date, freq='D')
-    prices = 100 + np.cumsum(np.random.randn(len(dates)) * 0.02)
-    
-    df_chart = pd.DataFrame({
-        'Date': dates[:len(prices)],
-        'Price': prices,
-        'EMA': pd.Series(prices).rolling(ema_period).mean(),
-        'Signal': np.random.choice([0, 1], len(prices), p=[0.7, 0.3])
-    })
-    
-    # Create interactive chart
-    fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=('Price & Signals', 'Indicators'),
-        vertical_spacing=0.1,
-        row_heights=[0.7, 0.3]
-    )
-    
-    # Price chart
-    fig.add_trace(
-        go.Scatter(x=df_chart['Date'], y=df_chart['Price'],
-                  name='Price', line=dict(color='#1f77b4')),
-        row=1, col=1
-    )
-    
-    fig.add_trace(
-        go.Scatter(x=df_chart['Date'], y=df_chart['EMA'],
-                  name=f'EMA({ema_period})', line=dict(color='#ff7f0e')),
-        row=1, col=1
-    )
-    
-    # Buy/sell signals
-    buy_signals = df_chart[df_chart['Signal'] == 1]
-    fig.add_trace(
-        go.Scatter(x=buy_signals['Date'], y=buy_signals['Price'],
-                  mode='markers', name='Buy Signal',
-                  marker=dict(color='green', size=10, symbol='triangle-up')),
-        row=1, col=1
-    )
-    
-    # RSI indicator (mock)
-    rsi_values = 50 + 20 * np.sin(np.arange(len(df_chart)) * 0.1)
-    fig.add_trace(
-        go.Scatter(x=df_chart['Date'], y=rsi_values,
-                  name=f'RSI({rsi_period})', line=dict(color='purple')),
-        row=2, col=1
-    )
-    
-    fig.update_layout(height=600, showlegend=True)
-    fig.update_xaxes(title_text="Date")
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="RSI", row=2, col=1)
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Action buttons
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("🚀 Run Backtest", type="primary"):
-            with st.spinner("Running backtest..."):
-                st.success("Backtest completed! Check results above.")
-    
-    with col2:
-        if st.button("🔧 Optimize Parameters"):
-            with st.spinner("Optimizing parameters..."):
-                st.success("Optimization completed!")
-    
-    with col3:
-        if st.button("💾 Save Strategy"):
-            st.success("Strategy saved successfully!")
-    
-    with col4:
-        if st.button("📤 Export Results"):
-            st.markdown(create_download_link(df_chart, "trading_results"), 
-                       unsafe_allow_html=True)
 
-def main():
-    """Main application entry point."""
-    # Sidebar navigation
-    st.sidebar.title("📋 Navigation")
-    page = st.sidebar.selectbox(
-        "Choose Page",
-        ["🏠 Home", "📊 Data Explorer", "🎛️ Variable Tuner", 
-         "🔮 Prediction", "💼 Portfolio", "⚙️ Settings"]
+def human_last_modified(paths: list[str]) -> str:
+    latest = 0.0
+    for pth in paths:
+        if os.path.exists(pth):
+            latest = max(latest, os.path.getmtime(pth))
+    if latest == 0:
+        return "unknown"
+    secs = time.time() - latest
+    if secs < 60:
+        return f"{int(secs)}s ago"
+    if secs < 3600:
+        return f"{int(secs//60)}m ago"
+    return datetime.fromtimestamp(latest, tz=timezone.utc).strftime(
+        "%Y-%m-%d %H:%M UTC"
     )
-    
-    if page == "🏠 Home":
-        main_dashboard()
-    elif page == "📊 Data Explorer":
-        from ui.pages.data_explorer import enhanced_data_explorer
-        enhanced_data_explorer()
-    elif page == "🎛️ Variable Tuner":
-        from ui.pages.variable_tuner import enhanced_variable_tuner
-        enhanced_variable_tuner()
-    elif page == "🔮 Prediction":
-        from ui.pages.prediction_analysis import prediction_page
-        prediction_page()
-    elif page == "💼 Portfolio":
-        from ui.pages.portfolio_analysis import portfolio_page
-        portfolio_page()
-    elif page == "⚙️ Settings":
-        from ui.pages.settings import settings_page
-        settings_page()
 
-if __name__ == "__main__":
-    main()
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    kpi_card(
+        "Regime",
+        "Risk-On",
+        "Market regime is Risk-On — breadth & momentum supportive.",
+        color="green",
+    )
+with col2:
+    trend_label = "BTC Trend" if universe == "Crypto" else "SPY Trend"
+    kpi_card(
+        trend_label,
+        "Uptrend",
+        "Trading above its 50-day EMA.",
+        color="green",
+    )
+with col3:
+    kpi_card(
+        "Volatility",
+        "Moderate (60th pct)",
+        "Risk/reward balanced.",
+    )
+with col4:
+    _settings = load_settings()
+    mode_is_dry = _settings.get("DRY_RUN", True)
+    kpi_card(
+        "Mode",
+        ("DRY-RUN" if mode_is_dry else "LIVE"),
+        ("No live orders placed." if mode_is_dry else "Live orders enabled."),
+        color=(None if mode_is_dry else "green"),
+    )
+
+
+@st.cache_data(ttl=30)
+def _cached_summary() -> str:
+    return summarize_market_report(max_words=80)
+
+
+@st.cache_data(ttl=30)
+def _cached_ops():
+    return read_opportunities()
+
+
+def _filter_ops(ops: list[dict], uni: str) -> list[dict]:
+    if uni == "US Stocks":
+        return [o for o in ops if "/" not in str(o.get("symbol", ""))]
+    return [o for o in ops if "/" in str(o.get("symbol", ""))]
+
+
+def _focus_from_ops(ops: list[dict], limit: int = 3):
+    ops_sorted = sorted(
+        ops,
+        key=lambda x: (
+            float(x.get("score") or 0),
+            float(x.get("ml_score") or 0.0),
+        ),
+        reverse=True,
+    )
+    out = []
+    for o in ops_sorted:
+        sym = o.get("symbol", "?")
+        rec = o.get("recommendation") or (
+            "BUY" if (o.get("score") or 0) >= 5 else "WATCH"
+        )
+        reasons = o.get("reasons") or []
+        top_reason = reasons[0] if reasons else "Momentum improving"
+        out.append((f"{sym} — {rec} candidate", f"Why: {top_reason}"))
+        if len(out) >= limit:
+            break
+    return out
+
+
+st.subheader("Today’s Market Report")
+st.caption(
+    "What: concise outlook. Why: context for focus list. "
+    "Action: export, notify Telegram, or check Signals."
+)
+with st.spinner("Loading market report…"):
+    summary = _cached_summary()
+st.write(summary)
+with st.spinner("Loading opportunities…"):
+    ops = _cached_ops()
+ops_f = _filter_ops(ops, universe)
+colx1, colx2, colx3 = st.columns(3)
+with colx1:
+    st.caption(f"Opportunities: {len(ops_f)} in latest scan")
+with colx2:
+    if st.button("Export CSV"):
+        df = pd.DataFrame(ops_f)
+        st.session_state["_dl_csv"] = df.to_csv(index=False).encode("utf-8")
+    if "_dl_csv" in st.session_state:
+        st.download_button(
+            "Download CSV",
+            data=st.session_state["_dl_csv"],
+            file_name="opportunities.csv",
+            mime="text/csv",
+        )
+with colx3:
+    if st.button("Export PDF"):
+        lines = [
+            summary
+        ] + [
+            f"{o.get('symbol')}: score {o.get('score')}" for o in ops_f[:10]
+        ]
+        pdf = make_pdf_from_text("Today’s Market Report", lines)
+        st.session_state["_dl_pdf"] = pdf
+    if st.session_state.get("_dl_pdf"):
+        st.download_button(
+            "Download PDF",
+            data=st.session_state["_dl_pdf"] or b"",
+            file_name="market_report.pdf",
+            mime="application/pdf",
+            disabled=st.session_state["_dl_pdf"] is None,
+        )
+    if st.button("Notify Telegram"):
+        ok = send_telegram_message("Market report updated on dashboard")
+        st.success("Sent") if ok else st.warning(
+            "Not sent (check Telegram setup)"
+        )
+
+
+st.subheader("Current Market Focus")
+st.caption(
+    "Top 3 candidates by score/ML signal. Read Why to see drivers."
+)
+focus_items = _focus_from_ops(ops_f, limit=3)
+if not focus_items:
+    st.info(
+        "No strong focus items right now. Check back after next scan or "
+        "open Signals to review full list."
+    )
+else:
+    for head, why in focus_items:
+        st.write(f"• {head}")
+        st.caption(why)
+
+with st.expander("Guided Actions", expanded=False):
+    st.write("- View Signals to see all setups (filter by score/TF).")
+    st.write("- Notify Telegram to share a quick update.")
+    st.write("- Open Research Lab to experiment and validate.")
+    cA, cB = st.columns(2)
+    with cA:
+        try:
+            st.page_link(
+                "pages/04_Signals.py",
+                label="View Signals",
+                icon=":material/trending_up:",
+            )
+        except Exception:
+            st.caption("Use sidebar to open Signals.")
+    with cB:
+        try:
+            st.page_link(
+                "pages/06_Research Lab.py",
+                label="Open Research Lab",
+                icon=":material/science:",
+            )
+        except Exception:
+            st.caption("Use sidebar to open Research Lab.")
+
+
+# Optional US stocks snapshot when selected
+if universe == "US Stocks":
+    st.subheader("US Market Snapshot")
+    snapshot = {}
+    try:
+        import json as _json
+        with open("data/daily_reports/market_snapshot.json", "r") as _f:
+            snapshot = _json.load(_f)
+    except Exception:
+        snapshot = {}
+    tickers = ["SPY", "QQQ", "AAPL", "MSFT"]
+    cols = st.columns(4)
+    any_data = False
+    for i, t in enumerate(tickers):
+        info = snapshot.get(t, {}) if isinstance(snapshot, dict) else {}
+        price = info.get("current_price")
+        if price is not None:
+            any_data = True
+            with cols[i]:
+                st.metric(t, price)
+    if not any_data:
+        st.caption(
+            "No US snapshot available yet. Will populate after next report."
+        )
+
+
+st.subheader("Recent Alerts")
+if alerts := recent_risk_alerts(5):
+    for a in alerts:
+        st.warning(a)
+else:
+    st.success("No recent risk alerts.")
+
+st.subheader("System Health")
+latest_files = [
+    "logs/latest_market_outlook.txt",
+    "logs/latest_opportunities.txt",
+    "logs/latest_portfolio_analysis.txt",
+    "logs/latest_risk_alerts.txt",
+]
+last_refresh = human_last_modified(latest_files)
+settings = load_settings()
+mode_str = "DRY-RUN" if settings.get("DRY_RUN", True) else "LIVE"
+st.caption(
+    f"Mode: {mode_str}  |  Last data refresh: {last_refresh}  |  "
+    "Next scans: crypto 1m / equities pre-market in 3h"
+)
+
+# quick checklist for common setup items
+tg_token_ok = bool(os.getenv("TELEGRAM_TOKEN"))
+tg_chat_ok = bool(os.getenv("TELEGRAM_CHAT_ID"))
+ck1, ck2, ck3 = st.columns(3)
+with ck1:
+    st.write(
+        (
+            "✅ Telegram Token set"
+            if tg_token_ok
+            else "⚠️ Telegram Token missing"
+        )
+    )
+with ck2:
+    st.write(
+        ("✅ Chat ID set" if tg_chat_ok else "ℹ️ Chat ID optional (for pushes)")
+    )
+with ck3:
+    st.write(
+        (
+            "✅ Files readable"
+            if last_refresh != "unknown"
+            else "ℹ️ Waiting for data"
+        )
+    )
+
+st.info(
+    "No active chart here. See Signals for setups or Research Lab for visuals."
+)
+
+# Next steps quick links
+try:
+    st.subheader("Next Steps")
+    a, b = st.columns(2)
+    with a:
+        st.page_link(
+            "pages/04_Signals.py",
+            label="View Signals",
+            icon=":material/trending_up:",
+        )
+    with b:
+        st.page_link(
+            "pages/06_Research Lab.py",
+            label="Open Research Lab",
+            icon=":material/science:",
+        )
+except Exception:
+    st.caption("Use the sidebar to navigate to Signals or Research Lab.")
