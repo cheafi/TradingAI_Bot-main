@@ -4,8 +4,14 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from datetime import datetime, time as dtime
 from typing import Any, Dict, Optional, Set
+
+# Add the project root to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from dotenv import load_dotenv
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -23,8 +29,12 @@ from src.telegram.message_templates import (
     format_bot_status,
     format_portfolio_alert,
     format_portfolio_summary,
+    format_market_opportunity,
+    format_portfolio_position,
+    format_market_sentiment,
     next_job_hints,
 )
+from src.telegram.market_analyzer import MarketAnalyzer
 
 
 # Logging
@@ -60,6 +70,8 @@ class RealTelegramInvestmentBot:
         self.subscribers: Set[int] = set()
         self.client_portfolios: Dict[int, Dict[str, Dict[str, float]]] = {}
         self.crypto_agent: Optional[Any] = None  # assigned at startup
+        self.market_analyzer = MarketAnalyzer()
+        self.pending_trades: Dict[int, Any] = {}  # Track pending trade confirmations
         self._setup_handlers()
         logger.info("Bot initialized")
 
@@ -88,6 +100,15 @@ class RealTelegramInvestmentBot:
         self.app.add_handler(CommandHandler("news", self.market_news))
         self.app.add_handler(CommandHandler("stop", self.stop_command))
         self.app.add_handler(CommandHandler("setstop", self.set_stop))
+        
+        # Enhanced market analysis commands
+        self.app.add_handler(CommandHandler("scan", self.scan_opportunities))
+        self.app.add_handler(CommandHandler("sentiment", self.market_sentiment))
+        self.app.add_handler(CommandHandler("positions", self.show_positions))
+        self.app.add_handler(CommandHandler("summary", self.portfolio_summary))
+        
+        # Message handler for trade confirmations
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         # Backtest & historical simulation
         self.app.add_handler(CommandHandler("backtest", self.backtest_command))
         self.app.add_handler(CommandHandler("advise", self.advise_command))

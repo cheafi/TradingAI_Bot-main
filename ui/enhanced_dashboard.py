@@ -1,19 +1,30 @@
 import time
 import os
+import sys
 from datetime import datetime, timezone
+from contextlib import suppress
 import streamlit as st
 import pandas as pd
-from src.ui_ext.data_sources import (
-    summarize_market_report,
-    recent_risk_alerts,
-    read_opportunities,
-    make_pdf_from_text,
-)
-from src.ui_ext.settings_store import load_settings, send_telegram_message
-from src.ui_ext.ui_helpers import render_mode_pill
 
+# Add the project root to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from contextlib import suppress
+# Now import our modules
+try:
+    from src.ui_ext.data_sources import (
+        summarize_market_report,
+        recent_risk_alerts,
+        read_opportunities,
+        make_pdf_from_text,
+    )
+    from src.ui_ext.settings_store import load_settings, send_telegram_message
+    from src.ui_ext.ui_helpers import render_mode_pill
+except ImportError as e:
+    st.error(f"Import error: {e}")
+    st.error("Please make sure the project is properly set up and all dependencies are installed.")
+    st.stop()
 
 
 def _cleanup_legacy_pages() -> None:

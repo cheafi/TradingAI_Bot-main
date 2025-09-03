@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, Dict, List, Any
 from datetime import datetime, timedelta
 from contextlib import suppress
 
@@ -25,6 +25,118 @@ def _join_lines(lines: Iterable[str]) -> str:
         ln for ln in lines if ln is not None and str(ln).strip() != ""
     ]  # type: ignore
     return "\n".join(valid)
+
+
+def format_market_opportunity(opportunity: Any) -> str:
+    """Format a market opportunity message"""
+    action_emoji = "🟢 BUY" if opportunity.action == "BUY" else "🔴 SHORT"
+    confidence_emoji = "🔥" if opportunity.confidence_level > 80 else "⚡" if opportunity.confidence_level > 70 else "💡"
+    
+    lines = [
+        f"🎯 **MARKET OPPORTUNITY** {confidence_emoji}",
+        f"",
+        f"📊 **{opportunity.symbol}** | {action_emoji}",
+        f"💰 Current Price: ${opportunity.current_price:.2f}",
+        f"🎯 Target Price: ${opportunity.target_price:.2f}",
+        f"🛡️ Stop Loss: ${opportunity.stop_loss:.2f}",
+        f"📉 Max Drop: {opportunity.max_drop:.1f}%",
+        f"🎲 Confidence: {opportunity.confidence_level:.0f}%",
+        f"",
+        f"📈 **Analysis:**",
+        f"🔍 Reason: {opportunity.reason}",
+        f"📰 Event: {opportunity.event}",
+        f"🏗️ Setup: {opportunity.setup_type}",
+        f"📊 Curve: {opportunity.curve_analysis}",
+        f"",
+        f"⏰ Time: {opportunity.timestamp.strftime('%H:%M:%S')}",
+        f"",
+        f"💡 **Reply with position size (e.g., 100, 500, 1000) to enter this trade!**",
+        f"🔄 Reply '0' to skip this opportunity",
+        f"",
+        f"⚠️ {_mode_badge()}"
+    ]
+    
+    return _join_lines(lines)
+
+
+def format_portfolio_position(position: Any) -> str:
+    """Format a portfolio position message"""
+    action_emoji = "🟢" if position.action == "BUY" else "🔴"
+    pnl_emoji = "💚" if position.pnl >= 0 else "❤️"
+    status_emoji = {"ACTIVE": "🔄", "STOPPED": "🛑", "TARGET_REACHED": "🎯", "CLOSED": "✅"}.get(position.status, "❓")
+    
+    lines = [
+        f"{status_emoji} **POSITION UPDATE**",
+        f"",
+        f"📊 **{position.symbol}** | {action_emoji} {position.action}",
+        f"💰 Entry: ${position.entry_price:.2f}",
+        f"💱 Current: ${position.current_price:.2f}",
+        f"📈 Quantity: {position.quantity:.2f}",
+        f"🎯 Target: ${position.target_price:.2f}",
+        f"🛡️ Stop: ${position.stop_loss:.2f}",
+        f"",
+        f"{pnl_emoji} **P&L: ${position.pnl:.2f} ({position.pnl_percent:.1f}%)**",
+        f"📊 Status: {position.status}",
+        f"⏰ Entry Date: {position.entry_date.strftime('%m/%d %H:%M')}",
+        f"",
+        f"⚠️ {_mode_badge()}"
+    ]
+    
+    return _join_lines(lines)
+
+
+def format_portfolio_summary(summary: Dict) -> str:
+    """Format portfolio summary message"""
+    pnl_emoji = "💚" if summary['total_pnl'] >= 0 else "❤️"
+    win_rate_emoji = "🔥" if summary['win_rate'] > 70 else "⚡" if summary['win_rate'] > 50 else "💡"
+    
+    lines = [
+        f"📊 **PORTFOLIO SUMMARY**",
+        f"",
+        f"{pnl_emoji} **Total P&L: ${summary['total_pnl']:.2f}**",
+        f"📈 Avg Return: {summary['avg_return']:.1f}%",
+        f"🔄 Active Positions: {summary['active_positions']}",
+        f"📊 Total Trades: {summary['total_trades']}",
+        f"",
+        f"{win_rate_emoji} **Win Rate: {summary['win_rate']:.1f}%**",
+        f"✅ Wins: {summary['wins']}",
+        f"❌ Losses: {summary['losses']}",
+        f"",
+        f"⚠️ {_mode_badge()}"
+    ]
+    
+    return _join_lines(lines)
+
+
+def format_market_sentiment(sentiment: Dict) -> str:
+    """Format US market sentiment message"""
+    sentiment_emoji = {"BULLISH": "🟢", "BEARISH": "🔴", "NEUTRAL": "🟡"}.get(sentiment['sentiment'], "❓")
+    fear_greed_emoji = {"FEAR": "😨", "GREED": "🤑", "NEUTRAL": "😐"}.get(sentiment.get('fear_greed', 'NEUTRAL'), "😐")
+    
+    lines = [
+        f"🇺🇸 **US MARKET SENTIMENT** {sentiment_emoji}",
+        f"",
+        f"📊 **Overall: {sentiment['sentiment']}**",
+        f"📈 Market Change: {sentiment.get('overall_change', 0):.2f}%",
+        f"😱 VIX Level: {sentiment.get('vix_level', 0):.1f}",
+        f"{fear_greed_emoji} Fear/Greed: {sentiment.get('fear_greed', 'NEUTRAL')}",
+        f"",
+        f"📊 **Major Indices:**"
+    ]
+    
+    if 'indices' in sentiment:
+        for name, data in sentiment['indices'].items():
+            change_emoji = "🟢" if data['change_pct'] >= 0 else "🔴"
+            lines.append(f"{change_emoji} {name}: {data['change_pct']:+.2f}%")
+    
+    lines.extend([
+        f"",
+        f"⏰ Updated: {datetime.now().strftime('%H:%M:%S')}",
+        f"",
+        f"⚠️ {_mode_badge()}"
+    ])
+    
+    return _join_lines(lines)
 
 
 def format_daily_market_report(
