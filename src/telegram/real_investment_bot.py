@@ -101,8 +101,9 @@ class RealTelegramInvestmentBot:
         self.app.add_handler(CommandHandler("stop", self.stop_command))
         self.app.add_handler(CommandHandler("setstop", self.set_stop))
         
-        # Enhanced market analysis commands
-        self.app.add_handler(CommandHandler("scan", self.scan_opportunities))
+    # Enhanced market analysis commands
+    # Map /scan to buying_opportunities for now (alias)
+    self.app.add_handler(CommandHandler("scan", self.buying_opportunities))
         self.app.add_handler(CommandHandler("sentiment", self.market_sentiment))
         self.app.add_handler(CommandHandler("positions", self.show_positions))
         self.app.add_handler(CommandHandler("summary", self.portfolio_summary))

@@ -5,12 +5,25 @@ Simple Web Interface for TradingAI Bot
 This creates a basic Flask web application to provide web access to the trading system.
 """
 
-from flask import Flask, render_template_string, jsonify, request
 import os
 import sys
 import json
 from datetime import datetime
-import pandas as pd
+
+# Fix platform import issue
+import importlib
+import importlib.util
+
+try:
+    from flask import Flask, render_template_string, jsonify, request
+except ImportError:
+    print("Flask not available, using simple HTTP server instead")
+    Flask = None
+
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 # Add project root to path
 sys.path.append('/workspaces/TradingAI_Bot-main')

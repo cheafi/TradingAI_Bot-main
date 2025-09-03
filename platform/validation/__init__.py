@@ -1,1 +1,0 @@
-"""Validation and testing systems."""
