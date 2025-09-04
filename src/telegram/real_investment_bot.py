@@ -98,18 +98,22 @@ class RealTelegramInvestmentBot:
         self.app.add_handler(CommandHandler("status", self.service_status))
         self.app.add_handler(CommandHandler("market", self.quick_market))
         self.app.add_handler(CommandHandler("news", self.market_news))
+        # New richer commands
+        self.app.add_handler(CommandHandler("sentiment", self.market_sentiment))
+        self.app.add_handler(CommandHandler("positions", self.positions_command))
+        self.app.add_handler(CommandHandler("summary", self.portfolio_summary_command))
+        self.app.add_handler(CommandHandler("refresh", self.refresh_opportunities))
         self.app.add_handler(CommandHandler("stop", self.stop_command))
         self.app.add_handler(CommandHandler("setstop", self.set_stop))
-        
-    # Enhanced market analysis commands
-    # Map /scan to buying_opportunities for now (alias)
-    self.app.add_handler(CommandHandler("scan", self.buying_opportunities))
-        self.app.add_handler(CommandHandler("sentiment", self.market_sentiment))
-        self.app.add_handler(CommandHandler("positions", self.show_positions))
-        self.app.add_handler(CommandHandler("summary", self.portfolio_summary))
-        
-        # Message handler for trade confirmations
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+
+        # Alias: /scan → /opportunities
+        self.app.add_handler(CommandHandler("scan", self.buying_opportunities))
+
+        # Message handler for free text (trade confirmations / intents)
+        self.app.add_handler(
+            MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+        )
+
         # Backtest & historical simulation
         self.app.add_handler(CommandHandler("backtest", self.backtest_command))
         self.app.add_handler(CommandHandler("advise", self.advise_command))
@@ -119,14 +123,8 @@ class RealTelegramInvestmentBot:
         self.app.add_handler(CommandHandler("add", self.add_position))
         self.app.add_handler(CommandHandler("remove", self.remove_position))
 
-        # Callback & text
+        # Callback buttons
         self.app.add_handler(CallbackQueryHandler(self.button_callback))
-        self.app.add_handler(
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                self.handle_message,
-            )
-        )
 
     # ----- Command handlers -----
     async def start_command(
@@ -158,13 +156,11 @@ class RealTelegramInvestmentBot:
         chat_id = update.effective_chat.id
         help_text = (
             "📘 指令\n"
-            "/start, /help, /subscribe, /unsubscribe\n"
-            "/outlook, /opportunities, /portfolio, /alerts\n"
-            "/market, /news\n"
-            "/add <代號> [數量] [成本] [停損], /remove <代號>, /setstop <代號> <價格>\n"
-            "/backtest <代號> [週期]\n"
-            "/advise <代號> <日期> [週期]\n"
-            "/simulate <代號> <起日> <迄日> [週期]\n"
+            "Core: /start /help /subscribe /unsubscribe /status /stop\n"
+            "Market: /outlook /opportunities (/scan) /market /news /sentiment /refresh\n"
+            "Portfolio: /portfolio /positions /summary /add <代號> [數量] [成本] [停損] /remove <代號> /setstop <代號> <價格>\n"
+            "Analytics: /backtest <代號> [週期] /advise <代號> <日期> [週期] /simulate <代號> <起日> <迄日> [週期]\n"
+            "Other: /alerts\n"
         )
         await context.bot.send_message(chat_id=chat_id, text=help_text)
 
@@ -238,19 +234,30 @@ class RealTelegramInvestmentBot:
         chat_id = update.effective_chat.id
         # Try to structure: list top N opportunities
         try:
-            with open("data/daily_reports/opportunities.json", "r") as f:
-                data = json.load(f)
-            ops = data.get("all_opportunities") or []
-            lines = ["💰 Opportunities"]
-            for op in ops[:10]:
-                sym = op.get("symbol")
-                score = op.get("score")
-                rec = op.get("recommendation") or (
-                    "BUY" if (score or 0) >= 5 else "WATCH"
-                )
-                reason = (op.get("reasons") or [""])[0]
-                lines.append(f"- {sym}: {rec} (score {score}) — {reason}")
-            txt = "\n".join(lines)
+            # Prefer live analysis if possible
+            live_ops = await self.market_analyzer.analyze_market_opportunities()
+            if live_ops:
+                lines = ["💰 Opportunities (Live Scan)"]
+                for opp in live_ops[:8]:
+                    lines.append(
+                        f"- {opp.symbol}: {opp.action} conf {opp.confidence_level:.0f}% "
+                        f"RSI {opp.rsi:.0f} tgt {opp.target_price:.2f} stop {opp.stop_loss:.2f}"
+                    )
+                txt = "\n".join(lines)
+            else:
+                with open("data/daily_reports/opportunities.json", "r") as f:
+                    data = json.load(f)
+                ops = data.get("all_opportunities") or []
+                lines = ["💰 Opportunities (Cached)"]
+                for op in ops[:10]:
+                    sym = op.get("symbol")
+                    score = op.get("score")
+                    rec = op.get("recommendation") or (
+                        "BUY" if (score or 0) >= 5 else "WATCH"
+                    )
+                    reason = (op.get("reasons") or [""])[0]
+                    lines.append(f"- {sym}: {rec} (score {score}) — {reason}")
+                txt = "\n".join(lines)
         except Exception:
             txt = await self.generate_opportunities()
         await context.bot.send_message(
@@ -258,6 +265,22 @@ class RealTelegramInvestmentBot:
             text=txt,
             parse_mode="Markdown",
         )
+
+    async def refresh_opportunities(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat_id = update.effective_chat.id
+        try:
+            live_ops = await self.market_analyzer.analyze_market_opportunities()
+            if not live_ops:
+                await context.bot.send_message(chat_id=chat_id, text="目前無高信心機會。")
+                return
+            for opp in live_ops[:5]:
+                from types import SimpleNamespace
+                # Reuse formatter expecting attributes similar to dataclass
+                formatted = format_market_opportunity(opp)
+                await context.bot.send_message(chat_id=chat_id, text=formatted, parse_mode="Markdown")
+                await asyncio.sleep(0.3)
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"掃描失敗: {e}")
 
     async def service_status(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -471,11 +494,57 @@ class RealTelegramInvestmentBot:
             await self.buying_opportunities(update, context)
         elif any(k in text for k in ["風險", "risk", "警報", "alert"]):
             await self.risk_alerts(update, context)
+        elif any(k in text for k in ["sentiment", "情緒", "情緒分析"]):
+            await self.market_sentiment(update, context)
         else:
             await context.bot.send_message(
                 chat_id=chat_id,
                 text="輸入 /help 查看可用功能"
             )
+
+    async def market_sentiment(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat_id = update.effective_chat.id
+        try:
+            sentiment = await self.market_analyzer.get_us_market_sentiment()
+            if sentiment.get('error'):
+                await context.bot.send_message(chat_id=chat_id, text=f"情緒獲取失敗: {sentiment['error']}")
+                return
+            msg = format_market_sentiment(sentiment)
+            await context.bot.send_message(chat_id=chat_id, text=msg)
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"情緒錯誤: {e}")
+
+    async def positions_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat_id = update.effective_chat.id
+        try:
+            positions = await self.market_analyzer.update_positions()
+            if not positions:
+                await context.bot.send_message(chat_id=chat_id, text="目前無持倉。")
+                return
+            for pos in positions[:10]:
+                # reuse formatter expecting fields
+                formatted = format_portfolio_position(pos)
+                await context.bot.send_message(chat_id=chat_id, text=formatted)
+                await asyncio.sleep(0.2)
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"持倉更新失敗: {e}")
+
+    async def portfolio_summary_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        chat_id = update.effective_chat.id
+        try:
+            summary = await self.market_analyzer.get_portfolio_summary()
+            # Construct human summary
+            lines = [
+                "📊 PORTFOLIO PERFORMANCE",
+                f"P&L: {summary['total_pnl']:.2f}",
+                f"Avg Return: {summary['avg_return']:.2f}%",
+                f"Active Positions: {summary['active_positions']}",
+                f"Trades: {summary['total_trades']}",
+                f"Win Rate: {summary['win_rate']:.1f}%  (W:{summary['wins']} / L:{summary['losses']})",
+            ]
+            await context.bot.send_message(chat_id=chat_id, text="\n".join(lines))
+        except Exception as e:
+            await context.bot.send_message(chat_id=chat_id, text=f"摘要失敗: {e}")
 
     async def button_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
