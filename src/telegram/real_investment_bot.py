@@ -935,6 +935,23 @@ class RealTelegramInvestmentBot:
     # ----- Entry -----
     def start_telegram_service(self) -> None:
         logger.info("Starting Real Telegram Investment Bot")
+        # Startup notification
+        try:
+            chat_env = os.getenv("TELEGRAM_CHAT_ID")
+            if chat_env:
+                chat_id_int = int(chat_env)
+                self.app.bot.send_message(chat_id=chat_id_int, text="🤖 TradingAI Bot is now live!")
+        except Exception as e:
+            logger.warning(f"Startup notification failed: {e}")
+        # Fix scheduler fallback
+        try:
+            if self.app.job_queue is None:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                loop.create_task(self.scheduled_reports())
+                logger.info("Scheduler fallback: started scheduled_reports via asyncio task")
+        except Exception as e:
+            logger.warning(f"Scheduler fallback error: {e}")
         self.app.run_polling()
 
     # -------- persistence utilities --------
