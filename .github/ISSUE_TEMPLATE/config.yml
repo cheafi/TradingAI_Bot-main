@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Community Discussions
+    url: https://github.com/cheafi/TradingAI_Bot-main/discussions
+    about: Ask questions and discuss ideas with the community
+  - name: 📚 Documentation
+    url: https://cheafi.github.io/TradingAI_Bot-main/
+    about: Read the comprehensive documentation
+  - name: 🔒 Security Issues
+    url: https://github.com/cheafi/TradingAI_Bot-main/security/advisories
+    about: Report security vulnerabilities privately

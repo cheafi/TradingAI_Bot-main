@@ -1,0 +1,334 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+          fi
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Check if this is a pre-release (contains alpha, beta, rc)
+          if [[ $VERSION =~ (alpha|beta|rc) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "Release version: $VERSION"
+      
+      - name: Validate version format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if [[ ! $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "Invalid version format: $VERSION"
+            echo "Expected format: v1.2.3 or v1.2.3-alpha1"
+            exit 1
+          fi
+
+  test-before-release:
+    needs: validate-release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      
+      - name: Run tests
+        run: |
+          pytest tests/ --cov=src --cov-report=xml -v
+      
+      - name: Test package installation
+        run: |
+          pip install -e .
+          python -c "import src; print('Package installation successful')"
+
+  build-artifacts:
+    needs: [validate-release, test-before-release]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine wheel
+      
+      - name: Update version in pyproject.toml
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          # Remove 'v' prefix for Python version
+          PYTHON_VERSION=${VERSION#v}
+          sed -i "s/version = \".*\"/version = \"$PYTHON_VERSION\"/" pyproject.toml
+          echo "Updated version to $PYTHON_VERSION"
+      
+      - name: Build package
+        run: |
+          python -m build
+      
+      - name: Verify package
+        run: |
+          twine check dist/*
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist-packages
+          path: dist/
+      
+      - name: Build Docker image
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          docker build -t tradingai-bot:$VERSION .
+          docker build -t tradingai-bot:latest .
+          
+          # Save Docker images
+          docker save tradingai-bot:$VERSION | gzip > tradingai-bot-$VERSION.tar.gz
+          docker save tradingai-bot:latest | gzip > tradingai-bot-latest.tar.gz
+      
+      - name: Upload Docker artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-images
+          path: |
+            tradingai-bot-*.tar.gz
+
+  security-scan:
+    needs: build-artifacts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist-packages
+          path: dist/
+      
+      - name: Security scan with bandit
+        run: |
+          pip install bandit
+          bandit -r src/ -f json -o security-report.json || true
+      
+      - name: Package vulnerability scan
+        run: |
+          pip install safety
+          safety check --json --output safety-report.json || true
+      
+      - name: Upload security reports
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-reports
+          path: |
+            security-report.json
+            safety-report.json
+
+  generate-changelog:
+    needs: validate-release
+    runs-on: ubuntu-latest
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          
+          # Get previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          echo "## Changes in $VERSION" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "### Commits since $PREVIOUS_TAG:" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            
+            # Generate commit log
+            git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
+          else
+            echo "### Initial Release" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "This is the first release of TradingAI Bot." >> CHANGELOG.md
+          fi
+          
+          echo "" >> CHANGELOG.md
+          echo "### Installation" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "```bash" >> CHANGELOG.md
+          echo "pip install tradingai-bot==${VERSION#v}" >> CHANGELOG.md
+          echo "```" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Docker" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "```bash" >> CHANGELOG.md
+          echo "docker pull tradingai-bot:$VERSION" >> CHANGELOG.md
+          echo "```" >> CHANGELOG.md
+          
+          # Set output for GitHub release
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat CHANGELOG.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Upload changelog
+        uses: actions/upload-artifact@v3
+        with:
+          name: changelog
+          path: CHANGELOG.md
+
+  create-github-release:
+    needs: [validate-release, test-before-release, build-artifacts, security-scan, generate-changelog]
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.validate-release.outputs.version }}
+          name: Release ${{ needs.validate-release.outputs.version }}
+          body: ${{ needs.generate-changelog.outputs.changelog }}
+          prerelease: ${{ needs.validate-release.outputs.is_prerelease }}
+          files: |
+            dist-packages/*
+            docker-images/*
+            security-reports/*
+            changelog/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-to-pypi:
+    needs: [create-github-release]
+    runs-on: ubuntu-latest
+    if: ${{ !needs.validate-release.outputs.is_prerelease }}
+    
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist-packages
+          path: dist/
+      
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip_existing: true
+
+  update-docker-hub:
+    needs: [create-github-release]
+    runs-on: ubuntu-latest
+    if: ${{ !needs.validate-release.outputs.is_prerelease }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Build and push Docker images
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          
+          # Build and push versioned image
+          docker buildx build --platform linux/amd64,linux/arm64 \
+            --tag tradingai-bot:$VERSION \
+            --tag tradingai-bot:latest \
+            --push .
+
+  notify-release:
+    needs: [create-github-release, validate-release]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Notify Telegram (Success)
+        if: ${{ needs.create-github-release.result == 'success' }}
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          MESSAGE="🚀 TradingAI Bot $VERSION has been released!%0A%0A✅ GitHub Release: https://github.com/cheafi/TradingAI_Bot-main/releases/tag/$VERSION"
+          
+          if [ "${{ secrets.TELEGRAM_BOT_TOKEN }}" != "" ] && [ "${{ secrets.TELEGRAM_CHAT_ID }}" != "" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+              -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -d "text=$MESSAGE" \
+              -d "parse_mode=HTML"
+          fi
+      
+      - name: Notify Telegram (Failure)
+        if: ${{ needs.create-github-release.result == 'failure' }}
+        run: |
+          VERSION="${{ needs.validate-release.outputs.version }}"
+          MESSAGE="❌ Release $VERSION failed!%0A%0ACheck the GitHub Actions for details."
+          
+          if [ "${{ secrets.TELEGRAM_BOT_TOKEN }}" != "" ] && [ "${{ secrets.TELEGRAM_CHAT_ID }}" != "" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+              -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -d "text=$MESSAGE" \
+              -d "parse_mode=HTML"
+          fi
