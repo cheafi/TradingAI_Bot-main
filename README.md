@@ -407,6 +407,40 @@ python research/ml_pipeline.py --symbol AAPL --start 2020-01-01
 - **API 友好**: 支持多種券商和數據提供商
 - **開源生態**: 基於成熟的開源工具鏈
 
+## 📞 Community & Support
+
+### 🤝 Contributing
+
+We welcome contributions from developers of all skill levels! Check out our comprehensive guides:
+
+- **[Contributing Guide](CONTRIBUTING.md)**: Detailed guide for contributors
+- **[Code of Conduct](CODE_OF_CONDUCT.md)**: Community standards and guidelines
+- **[Security Policy](SECURITY.md)**: How to report security vulnerabilities
+
+### 🐛 Issues & Feature Requests
+
+- **Bug Reports**: Use our [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml)
+- **Feature Requests**: Submit via [feature request template](.github/ISSUE_TEMPLATE/feature_request.yml)  
+- **Documentation**: Report docs issues with [documentation template](.github/ISSUE_TEMPLATE/documentation.yml)
+
+### 💬 Get Help
+
+- **GitHub Discussions**: Ask questions and share ideas
+- **GitHub Issues**: Report bugs and request features
+- **Documentation**: Comprehensive docs at [GitHub Pages](https://cheafi.github.io/TradingAI_Bot-main/)
+
+### 🔄 Pull Requests
+
+Ready to contribute code? Follow our [PR template](.github/PULL_REQUEST_TEMPLATE/pull_request_template.md) for smooth reviews.
+
+## 📈 Release Notes
+
+Track our progress in the [CHANGELOG.md](CHANGELOG.md). We use automated releases via GitHub Actions:
+
+- **Stable Releases**: `v1.0.0` format
+- **Pre-releases**: `v1.0.0-alpha1`, `v1.0.0-beta1` formats
+- **Automated CI/CD**: Full testing and deployment pipeline
+
 ---
 
 ## 🎉 恭喜您！

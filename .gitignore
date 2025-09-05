@@ -1,6 +1,7 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyc
 *.pyo
 *.pyd
 *.so
@@ -107,3 +108,9 @@ trading_data/
 live_trading/
 paper_trading/
 historical_data/
+
+# Sensitive files and API keys
+**/ALPACA_API_KEY.env
+**/*api_key*
+**/secrets.toml
+**/config.toml
