@@ -1,20 +1,89 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+*.so
+.build/
+.eggs/
+*.egg-info/
+.dist/
+
+# Virtual envs
+venv/
 .venv/
+.tgenv/
+venv39/
+tgvenv/
 
-# Environment
+# Environment & secrets
 .env
+.env.*
+.env.local
+secrets.toml
+secrets/*.json
 
-# Data
-data/
+# Logs & runtime output
+*.log
 logs/
-*.csv
-*.json
+bot.out
+dashboard.log
+server.log
+streamlit.log
 
-# IDE
+# Data & artifacts
+data/
+!data/.gitkeep
+*.sqlite*
+*.db
+models/
+model_artifacts/
+*.h5
+*.pt
+*.onnx
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+ruff_cache/
+.ipynb_checkpoints/
+.cache/
+
+# Notebooks
+*.ipynb
+
+# IDE / Editor
 .vscode/
 .idea/
+*.code-workspace
 
-# Optimization results
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage / test reports
+.coverage*
+htmlcov/
+
+# Node / frontend
+node_modules/
+
+# iOS / Xcode
+derivedData/
+DerivedData/
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+
+# Generated optimization outputs
 optimization_results.csv
+
+# Temporary
+*.tmp
+*.bak
+*.swp
+
+# Ignore user-specific platform rename
+platform_app/
+
+# Keep README in data if needed
