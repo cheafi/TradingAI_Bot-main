@@ -29,23 +29,25 @@ def main() -> None:
     else:
         logger.info("No TELEGRAM_CHAT_ID provided; skipping startup notification")
 
+    # Log token length only (avoid leaking full token again)
+    logger.info("Token length=%d", len(token))
+
     bot = TradingBot(token)
     logger.info("Starting polling (python-telegram-bot %s)", TG_VER)
 
-    async def _notify_startup() -> None:
-        if not chat_id:
-            return
-        try:
-            await bot.application.bot.send_message(chat_id=chat_id, text="Bot started ✅")
-            logger.info("Startup notification sent")
-        except Exception as e:  # pragma: no cover
-            logger.warning("Failed to send startup notification: %s", e)
-
-    # Use create_task after run_polling starts by passing post_init callback
-    async def _post_init(application):  # type: ignore
-        application.create_task(_notify_startup())
-
-    bot.application.post_init = _post_init  # type: ignore
+    # Fallback startup notification using job queue (more reliable than post_init)
+    if chat_id:
+        jq = getattr(bot.application, 'job_queue', None)
+        if jq is not None:
+            async def _startup_job(context):  # type: ignore
+                try:
+                    await context.bot.send_message(chat_id=chat_id, text="Bot started ✅ (job queue)")
+                    logger.info("Startup notification sent via job queue")
+                except Exception as e:  # pragma: no cover
+                    logger.warning("Failed to send startup notification (job queue): %s", e)
+            jq.run_once(_startup_job, when=1)
+        else:
+            logger.warning("Job queue unavailable; cannot schedule startup notification")
 
     bot.application.run_polling(
         drop_pending_updates=True,
