@@ -33,6 +33,31 @@ def main() -> None:
     # Log token length only (avoid leaking full token again)
     logger.info("Token length=%d", len(token))
 
+    # Force send startup notification BEFORE building event loop polling
+    if chat_id:
+        try:
+            import urllib.request, urllib.parse, json
+            payload = urllib.parse.urlencode({
+                "chat_id": chat_id,
+                "text": "Bot starting ✅ (force)",
+                "disable_notification": "true"
+            }).encode()
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            with urllib.request.urlopen(url, data=payload, timeout=5) as resp:  # type: ignore
+                data = resp.read()
+            try:
+                j = json.loads(data)
+                if j.get("ok"):
+                    logger.info("Force startup send succeeded (pre-poll)")
+                else:
+                    logger.warning("Force startup send returned not ok: %s", j)
+            except Exception:  # pragma: no cover
+                logger.warning("Force startup send non-JSON response: %r", data[:200])
+        except Exception as e:  # pragma: no cover
+            logger.warning("Force startup send failed: %s", e)
+    else:
+        logger.info("No chat_id; skipping force send")
+
     bot = TradingBot(token)
     logger.info("Starting polling (python-telegram-bot %s)", TG_VER)
 
