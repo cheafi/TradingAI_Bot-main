@@ -7,7 +7,7 @@ import pytest
 import pandas as pd
 import numpy as np
 from datetime import timedelta
-from platform.data.contracts import (
+from trading_platform.data.contracts import (
     PITDataManager, RSIFeature, MovingAverageFeature,
     FundamentalFeature, LeakageDetector
 )
