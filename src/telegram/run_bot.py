@@ -17,6 +17,7 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s'
 )
 logger = logging.getLogger("run_bot")
+logging.getLogger('telegram').setLevel(logging.DEBUG)
 
 
 def main() -> None:
@@ -35,7 +36,18 @@ def main() -> None:
     bot = TradingBot(token)
     logger.info("Starting polling (python-telegram-bot %s)", TG_VER)
 
-    # Fallback startup notification using job queue (more reliable than post_init)
+    # Post-init callback (fires when bot is fully initialized)
+    async def _post_init(app):  # type: ignore
+        if chat_id:
+            try:
+                await app.bot.send_message(chat_id=chat_id, text="Bot started ✅ (post_init)")
+                logger.info("Startup notification sent via post_init")
+            except Exception as e:  # pragma: no cover
+                logger.warning("post_init send failed: %s", e)
+
+    bot.application.post_init = _post_init  # type: ignore
+
+    # Job queue fallback (schedules 1s after start)
     if chat_id:
         jq = getattr(bot.application, 'job_queue', None)
         if jq is not None:
