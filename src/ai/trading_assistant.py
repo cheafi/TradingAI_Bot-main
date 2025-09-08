@@ -1,10 +1,11 @@
-# trading_assistant.py
+# trading_assistant.py - Multi-Asset AI Trading Assistant
 from __future__ import annotations
 import hashlib
 import logging
 import os
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from functools import wraps
 from typing import List, Dict, Any, Optional
 
@@ -19,15 +20,78 @@ from src.config import cfg
 logger = logging.getLogger(__name__)
 
 
+class AssetClass(Enum):
+    """Supported asset classes for multi-asset trading."""
+    CRYPTO = "crypto"
+    FX = "fx"
+    GOLD = "gold"
+    US_EQUITY = "us_equity"
+    HK_EQUITY = "hk_equity"
+
+
+@dataclass
+class AssetInfo:
+    """Asset-specific information for trading."""
+    symbol: str
+    asset_class: AssetClass
+    exchange: str
+    timezone: str
+    trading_hours: str
+    cost_model: Dict[str, Any] = field(default_factory=dict)
+    constraints: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TradingSignal:
+    """Standardized trading signal across all asset classes."""
+    # Common fields (通用欄位)
+    symbol: str
+    asset_class: AssetClass
+    direction: str  # "long" or "short"
+    entry_range: Dict[str, float]  # {"low": X, "high": Y}
+    targets: Dict[str, float]  # {"t1": X, "t2": Y}
+    stop_loss: float
+    horizon: str  # "intraday", "swing", "position"
+    conviction: int  # 1-5 scale
+    expected_alpha_bps: float  # Net of all costs
+    reasoning: List[str]  # 3 key reasons
+    suggested_size_pct: float  # % of portfolio
+    
+    # Asset-specific fields (資產特有欄位)
+    asset_specific: Dict[str, Any] = field(default_factory=dict)
+    
+    # Metadata
+    timestamp: float = field(default_factory=time.time)
+    confidence: Optional[float] = None
+    risk_level: Optional[str] = None
+    
+    def get_hkt_time(self) -> str:
+        """Get signal time in HKT format."""
+        import datetime
+        dt = datetime.datetime.fromtimestamp(self.timestamp)
+        # Convert to HKT (UTC+8)
+        hkt_dt = dt + datetime.timedelta(hours=8)
+        return hkt_dt.strftime("%Y-%m-%d %H:%M:%S HKT")
+
+
 @dataclass
 class Insight:
-    """Trading insight with enhanced metadata."""
+    """Trading insight with enhanced metadata for multi-asset support."""
     kind: str
     text: str
     meta: Dict[str, Any]
     timestamp: float = field(default_factory=time.time)
     confidence: Optional[float] = None
     risk_level: Optional[str] = None
+    asset_class: Optional[AssetClass] = None
+    
+    def get_bilingual_text(self) -> Dict[str, str]:
+        """Get bilingual text for the insight."""
+        # This would be enhanced with proper translation
+        return {
+            "en": self.text,
+            "zh": self.text  # TODO: Add Chinese translations
+        }
 
 
 def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
@@ -57,46 +121,123 @@ def retry_on_failure(max_retries: int = 3, delay: float = 1.0):
 
 
 class TradingAssistant:
-    """High level AI assistant facade with enhanced features.
-    - If Azure OpenAI env configured and openai lib available, uses that.
-    - Else falls back to lightweight heuristic summariser.
-    - Includes retry logic, caching, and comprehensive error handling.
+    """Multi-Asset AI Trading Assistant with enhanced features.
+    
+    Supports: Crypto • FX • Gold • US & HK Equities
+    Features:
+    - Asset-aware signal generation and analysis
+    - Bilingual support (English + 繁中)
+    - Cost model integration per asset class
+    - Risk management across asset classes
+    - Azure OpenAI integration with fallback
     """
     
+    # Asset class configurations
+    ASSET_CONFIGS = {
+        AssetClass.CRYPTO: {
+            "trading_hours": "24/7",
+            "cost_fields": ["maker_fee", "taker_fee", "funding_rate"],
+            "timezone": "UTC",
+            "min_edge_multiplier": 2.0
+        },
+        AssetClass.FX: {
+            "trading_hours": "24/5",
+            "cost_fields": ["spread_pips", "swap_rate"],
+            "timezone": "UTC",
+            "min_edge_multiplier": 2.0
+        },
+        AssetClass.GOLD: {
+            "trading_hours": "23/5",
+            "cost_fields": ["exchange_fee", "spread", "roll_cost"],
+            "timezone": "UTC",
+            "min_edge_multiplier": 2.0
+        },
+        AssetClass.US_EQUITY: {
+            "trading_hours": "09:30-16:00 EST",
+            "cost_fields": ["commission", "spread", "borrow_fee"],
+            "timezone": "EST",
+            "min_edge_multiplier": 2.0
+        },
+        AssetClass.HK_EQUITY: {
+            "trading_hours": "09:30-12:00,13:00-16:00 HKT",
+            "cost_fields": ["commission", "stamp_duty", "levy", "spread"],
+            "timezone": "HKT",
+            "min_edge_multiplier": 2.0
+        }
+    }
+    
     def __init__(self):
+        # OpenAI Configuration (supports both Standard and Azure)
+        self.openai_api_key = cfg.openai_api_key
+        self.openai_model = cfg.openai_model
+        self.openai_base_url = cfg.openai_base_url
+        
+        # Azure OpenAI Configuration (legacy)
         self.azure_endpoint = cfg.azure_openai_endpoint
         self.deployment = cfg.azure_openai_deployment
         self.api_version = cfg.azure_openai_api_version or "2024-02-15-preview"
+        
         self._client = None
         self._cache = {}  # Simple in-memory cache
         
-        # Initialize Azure OpenAI client if available
-        if self._validate_config() and OpenAI:
-            try:
-                base_url = (
-                    f"{self.azure_endpoint}/openai/deployments/"
-                    f"{self.deployment}"
-                )
-                api_key = os.getenv(
-                    "AZURE_OPENAI_KEY",
-                    os.getenv("AZURE_OPENAI_API_KEY")
-                )
-                self._client = OpenAI(
-                    base_url=base_url,
-                    api_key=api_key,
-                )
-                logger.info("Azure OpenAI client initialized successfully")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to initialize Azure OpenAI client: {e}"
-                )
-                self._client = None
+        # Portfolio limits
+        self.max_single_position = 0.06  # 6%
+        self.max_daily_turnover = 0.15   # 15%
+        self.target_portfolio_vol = 0.12  # 12%
+        
+        # Initialize OpenAI client (try standard OpenAI first, then Azure)
+        if self._init_standard_openai():
+            logger.info("Standard OpenAI client initialized successfully")
+        elif self._init_azure_openai():
+            logger.info("Azure OpenAI client initialized successfully")
         else:
             logger.warning(
-                "Azure OpenAI not available or config invalid, using fallback"
+                "No OpenAI API available, using fallback mode"
             )
 
-    def _validate_config(self) -> bool:
+    def _init_standard_openai(self) -> bool:
+        """Initialize standard OpenAI client."""
+        if not OpenAI or not self.openai_api_key:
+            return False
+            
+        try:
+            self._client = OpenAI(
+                api_key=self.openai_api_key,
+                base_url=self.openai_base_url
+            )
+            # Test the connection with a simple call
+            self._client.models.list()
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to initialize standard OpenAI: {e}")
+            self._client = None
+            return False
+
+    def _init_azure_openai(self) -> bool:
+        """Initialize Azure OpenAI client (legacy support)."""
+        if not OpenAI or not self._validate_azure_config():
+            return False
+            
+        try:
+            base_url = (
+                f"{self.azure_endpoint}/openai/deployments/"
+                f"{self.deployment}"
+            )
+            api_key = os.getenv(
+                "AZURE_OPENAI_KEY",
+                os.getenv("AZURE_OPENAI_API_KEY")
+            )
+            self._client = OpenAI(
+                base_url=base_url,
+                api_key=api_key,
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to initialize Azure OpenAI: {e}")
+            self._client = None
+            return False
+
+    def _validate_azure_config(self) -> bool:
         """Validate Azure OpenAI configuration."""
         required_fields = [
             self.azure_endpoint,
@@ -105,7 +246,7 @@ class TradingAssistant:
         ]
         is_valid = all(field is not None for field in required_fields)
         if not is_valid:
-            logger.warning("Azure OpenAI configuration incomplete")
+            logger.debug("Azure OpenAI configuration incomplete")
         return is_valid
 
     def _get_cache_key(self, signals: List[Dict[str, Any]]) -> str:
@@ -141,11 +282,11 @@ class TradingAssistant:
 
     # ---------------------- public API ----------------------------
     def analyse_signals(self, signals: List[Dict[str, Any]]) -> List[Insight]:
-        """Analyze trading signals with caching and fallback logic."""
+        """Analyze trading signals with multi-asset awareness and caching."""
         if not signals:
             return [Insight(
                 kind="info",
-                text="No current signals.",
+                text="No current signals. | 當前無交易訊號。",
                 meta={},
                 confidence=1.0,
                 risk_level="low"
@@ -165,6 +306,231 @@ class TradingAssistant:
         # Cache the result
         self._set_cached_result(cache_key, result)
         return result
+
+    def analyse_multi_asset_signals(
+        self, signals: List[TradingSignal]
+    ) -> List[Insight]:
+        """Analyze trading signals across multiple asset classes."""
+        if not signals:
+            return [Insight(
+                kind="info",
+                text="No multi-asset signals. | 無跨資產訊號。",
+                meta={},
+                confidence=1.0,
+                risk_level="low"
+            )]
+        
+        insights = []
+        
+        # Group signals by asset class
+        signals_by_asset = {}
+        for signal in signals:
+            asset_class = signal.asset_class
+            if asset_class not in signals_by_asset:
+                signals_by_asset[asset_class] = []
+            signals_by_asset[asset_class].append(signal)
+        
+        # Analyze each asset class
+        for asset_class, asset_signals in signals_by_asset.items():
+            asset_insights = self._analyse_asset_class_signals(
+                asset_class, asset_signals
+            )
+            insights.extend(asset_insights)
+        
+        # Add cross-asset analysis
+        cross_asset_insights = self._analyse_cross_asset_correlation(signals)
+        insights.extend(cross_asset_insights)
+        
+        # Add portfolio-level analysis
+        portfolio_insights = self._analyse_portfolio_level(signals)
+        insights.extend(portfolio_insights)
+        
+        return insights
+
+    def _analyse_asset_class_signals(
+        self, asset_class: AssetClass, signals: List[TradingSignal]
+    ) -> List[Insight]:
+        """Analyze signals within a specific asset class."""
+        if not signals:
+            return []
+            
+        # Filter signals by edge >= 2x cost rule
+        valid_signals = [
+            s for s in signals
+            if s.expected_alpha_bps >= (
+                self.ASSET_CONFIGS[asset_class]["min_edge_multiplier"] *
+                self._estimate_total_cost(s)
+            )
+        ]
+        
+        if not valid_signals:
+            return [Insight(
+                kind="warning",
+                text=f"No {asset_class.value} signals meet edge≥2×cost rule",
+                meta={
+                    "asset_class": asset_class.value,
+                    "filtered_count": len(signals)
+                },
+                confidence=0.8,
+                risk_level="medium",
+                asset_class=asset_class
+            )]
+        
+        # Generate asset-specific insights
+        insights = []
+        
+        # Signal count and quality
+        valid_count = len(valid_signals)
+        avg_conviction = sum(s.conviction for s in valid_signals) / valid_count
+        avg_alpha = sum(
+            s.expected_alpha_bps for s in valid_signals
+        ) / valid_count
+        
+        insights.append(Insight(
+            kind="asset_summary",
+            text=f"{asset_class.value}: {len(valid_signals)} signals, "
+                 f"avg conviction {avg_conviction:.1f}, "
+                 f"avg alpha {avg_alpha:.0f}bps",
+            meta={
+                "asset_class": asset_class.value,
+                "signal_count": len(valid_signals),
+                "avg_conviction": avg_conviction,
+                "avg_alpha_bps": avg_alpha
+            },
+            confidence=0.9,
+            risk_level="medium",
+            asset_class=asset_class
+        ))
+        
+        # Best signal in class
+        best_signal = max(
+            valid_signals,
+            key=lambda s: s.expected_alpha_bps * s.conviction
+        )
+        insights.append(Insight(
+            kind="best_signal",
+            text=(
+                f"Top {asset_class.value}: {best_signal.symbol} "
+                f"{best_signal.direction} "
+                f"(α:{best_signal.expected_alpha_bps:.0f}bps, "
+                f"conv:{best_signal.conviction})"
+            ),
+            meta={
+                "asset_class": asset_class.value,
+                "symbol": best_signal.symbol,
+                "direction": best_signal.direction,
+                "alpha_bps": best_signal.expected_alpha_bps,
+                "conviction": best_signal.conviction
+            },
+            confidence=best_signal.confidence or 0.7,
+            risk_level=best_signal.risk_level or "medium",
+            asset_class=asset_class
+        ))
+        
+        return insights
+
+    def _analyse_cross_asset_correlation(
+        self, signals: List[TradingSignal]
+    ) -> List[Insight]:
+        """Analyze correlations and interactions across asset classes."""
+        if len(signals) < 2:
+            return []
+            
+        # Simple correlation analysis
+        asset_classes = set(s.asset_class for s in signals)
+        
+        if len(asset_classes) > 1:
+            classes_text = ', '.join(ac.value for ac in asset_classes)
+            return [Insight(
+                kind="diversification",
+                text=(
+                    f"Multi-asset exposure across {len(asset_classes)} "
+                    f"classes: {classes_text}"
+                ),
+                meta={
+                    "asset_classes": [ac.value for ac in asset_classes],
+                    "diversification_score": len(asset_classes) / 5.0
+                },
+                confidence=0.8,
+                risk_level="low"
+            )]
+        
+        return []
+
+    def _analyse_portfolio_level(
+        self, signals: List[TradingSignal]
+    ) -> List[Insight]:
+        """Analyze portfolio-level metrics and constraints."""
+        if not signals:
+            return []
+            
+        insights = []
+        
+        # Total suggested exposure
+        total_exposure = sum(s.suggested_size_pct for s in signals)
+        
+        if total_exposure > 1.0:  # 100%
+            insights.append(Insight(
+                kind="risk_warning",
+                text=f"⚠️ Total exposure {total_exposure:.1%} exceeds 100%",
+                meta={"total_exposure": total_exposure},
+                confidence=0.9,
+                risk_level="high"
+            ))
+        
+        # Check single position limits
+        position_warnings = [
+            Insight(
+                kind="position_limit",
+                text=(
+                    f"⚠️ {signal.symbol} position "
+                    f"{signal.suggested_size_pct:.1%} "
+                    f"exceeds {self.max_single_position:.1%} limit"
+                ),
+                meta={
+                    "symbol": signal.symbol,
+                    "suggested_size": signal.suggested_size_pct,
+                    "limit": self.max_single_position
+                },
+                confidence=0.9,
+                risk_level="high"
+            )
+            for signal in signals
+            if signal.suggested_size_pct > self.max_single_position
+        ]
+        insights.extend(position_warnings)
+        
+        # Portfolio alpha estimate
+        total_alpha = sum(
+            s.expected_alpha_bps * s.suggested_size_pct for s in signals
+        )
+        
+        insights.append(Insight(
+            kind="portfolio_alpha",
+            text=f"Portfolio expected alpha: {total_alpha:.0f}bps | "
+                 f"組合預期超額：{total_alpha:.0f}基點",
+            meta={
+                "total_alpha_bps": total_alpha,
+                "signal_count": len(signals)
+            },
+            confidence=0.7,
+            risk_level="medium"
+        ))
+        
+        return insights
+
+    def _estimate_total_cost(self, signal: TradingSignal) -> float:
+        """Estimate total trading cost in basis points for a signal."""
+        # This would be enhanced with actual cost models per asset class
+        base_cost = {
+            AssetClass.CRYPTO: 10,      # 10 bps base
+            AssetClass.FX: 5,           # 5 bps base
+            AssetClass.GOLD: 8,         # 8 bps base
+            AssetClass.US_EQUITY: 12,   # 12 bps base
+            AssetClass.HK_EQUITY: 25,   # 25 bps base (stamp duty)
+        }
+        
+        return base_cost.get(signal.asset_class, 10)
 
     @retry_on_failure(max_retries=2, delay=0.5)
     def _analyse_with_llm(
@@ -189,8 +555,14 @@ class TradingAssistant:
         )
         
         try:
+            # Use appropriate model based on client type
+            model = (
+                self.deployment if self.azure_endpoint
+                else self.openai_model
+            )
+            
             resp = self._client.chat.completions.create(
-                model=self.deployment,
+                model=model,
                 messages=[
                     {
                         "role": "system",
@@ -392,10 +764,11 @@ class TradingAssistant:
         """Perform a health check of the assistant."""
         return {
             "llm_available": self._llm_available(),
-            "config_valid": self._validate_config(),
+            "openai_configured": bool(self.openai_api_key),
+            "azure_configured": self._validate_azure_config(),
             "cache_stats": self.get_cache_stats(),
-            "azure_endpoint": self.azure_endpoint is not None,
-            "deployment": self.deployment,
+            "openai_model": self.openai_model,
+            "azure_deployment": self.deployment,
             "api_version": self.api_version
         }
 
